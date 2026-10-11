@@ -1,0 +1,17 @@
+{
+  "name": "N1 プレー分析ボード",
+  "short_name": "N1分析",
+  "description": "試合・練習の動画に矢印・選手マーク・コメント・一時停止を書き込む分析アプリ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d1210",
+  "theme_color": "#0d1210",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
