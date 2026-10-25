@@ -155,6 +155,18 @@ select.sm{background:var(--raise);border:1px solid var(--line);border-radius:8px
 .moment{border:1px solid var(--line);background:var(--raise);border-radius:8px;padding:10px;display:grid;gap:8px}
 .moment.on{border-color:var(--accent)}
 .m-head{display:flex;align-items:center;gap:8px}
+.m-tog{background:none;border:0;color:var(--muted);width:20px;height:24px;padding:0;font-size:13px;transition:transform .15s}
+.m-tog[aria-expanded="true"]{transform:rotate(90deg);color:var(--fg)}
+.m-sum{flex:1;min-width:0;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.psel{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 6px;font-size:12px;font-weight:700;max-width:46%}
+.psel.p-hold{border-color:var(--accent);color:var(--accent)}
+.psel.p-timed{border-color:var(--hold);color:var(--hold)}
+.psel.p-pass{color:var(--muted)}
+.m-body{display:grid;gap:8px;min-width:0}
+.list{grid-template-columns:minmax(0,1fr)}
+.moment{min-width:0}
+.m-head{min-width:0}
+.m-head .m-time,.m-head .m-del,.m-head .m-tog{flex:none}
 .m-time{font-family:var(--f-mono);font-variant-numeric:tabular-nums;background:none;border:0;padding:0;font-size:14px;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
 .m-count{font-size:12px;color:var(--muted);flex:1}
 .m-del{background:none;border:0;color:var(--muted);font-size:12px;padding:2px 4px;border-radius:4px}
@@ -363,7 +375,7 @@ const SIZES = [[0.7,'小'],[1,'中'],[1.4,'大'],[2,'特大']];
 const sizeName = v => (SIZES.find(x => x[0] === (v || 1)) || [0,'中'])[1];
 const nextSize = v => SIZES[(SIZES.findIndex(x => x[0] === (v || 1)) + 1) % SIZES.length][0];
 const textFs = (s, W) => Math.max(10, W*.026*(s.fs || 1));
-const S = { tool:'arrow', color:COLORS[0][0], moments:[], key:'', src:null, lastT:0, skipId:null, holdId:null, holdUntil:null,
+const S = { open:new Set(), tool:'arrow', color:COLORS[0][0], moments:[], key:'', src:null, lastT:0, skipId:null, holdId:null, holdUntil:null,
   draft:null, drag:null, undo:[], url:null, enter:new Map(), tracking:null, warnedQuota:false };
 const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
 const uid = () => Math.random().toString(36).slice(2,9);
@@ -399,7 +411,7 @@ $('#noAuto').onchange = e => { try { localStorage.setItem('n1va:noAuto', e.targe
 const momentAt = t => S.moments.find(m => Math.abs(m.t - t) < 0.045);
 function ensureMoment(t){
   let m = momentAt(t);
-  if (!m){ m = { id:uid(), t, pause:-1, show:5, comment:'', shapes:[] }; S.moments.push(m); S.moments.sort((a,b) => a.t - b.t); }
+  if (!m){ m = { id:uid(), t, pause:-1, show:5, comment:'', shapes:[] }; S.moments.push(m); S.open.add(m.id); S.moments.sort((a,b) => a.t - b.t); }
   return m;
 }
 const lastMomentBefore = t => { let r = null; for (const m of S.moments) if (m.t <= t + 0.045) r = m; return r; };
@@ -631,11 +643,14 @@ function drawShape(s, W, H, al, t, age){
       c.drawImage(im, fx - gw/2, fy - gh, gw, gh);
     }
     c.globalAlpha = al; c.shadowBlur = 0;
-    const fs = Math.max(12, W*.018), label = s.label || 'ここ';
-    c.font = `700 ${fs}px "Noto Sans JP", sans-serif`; c.textBaseline = 'middle'; c.textAlign = 'center';
-    const tw = c.measureText(label).width + fs*.9, ty = fy - gh - fs*.9;
-    c.fillStyle = s.c; c.beginPath(); if (c.roundRect) c.roundRect(fx - tw/2, ty - fs*.7, tw, fs*1.4, fs*.7); else c.rect(fx - tw/2, ty - fs*.7, tw, fs*1.4); c.fill();
-    c.fillStyle = '#111'; c.fillText(label, fx, ty + 1);
+    const label = s.label && s.label !== 'ここ' ? s.label : '';
+    if (label){
+      const fs = Math.max(12, W*.018);
+      c.font = `700 ${fs}px "Noto Sans JP", sans-serif`; c.textBaseline = 'middle'; c.textAlign = 'center';
+      const tw = c.measureText(label).width + fs*.9, ty = fy - gh - fs*.9;
+      c.fillStyle = s.c; c.beginPath(); if (c.roundRect) c.roundRect(fx - tw/2, ty - fs*.7, tw, fs*1.4, fs*.7); else c.rect(fx - tw/2, ty - fs*.7, tw, fs*1.4); c.fill();
+      c.fillStyle = '#111'; c.fillText(label, fx, ty + 1);
+    }
     if (S.tool === 'move' && S.src.paused){
       const hs = Math.max(10, W*.012); c.fillStyle = '#fff'; c.strokeStyle = '#111'; c.lineWidth = 2;
       c.fillRect(fx + gw/2 - hs/2, fy - hs/2, hs, hs); c.strokeRect(fx + gw/2 - hs/2, fy - hs/2, hs, hs);
@@ -890,7 +905,7 @@ function makeGhost(d){
   c.fillStyle = g; c.fillRect(0, 0, ow, oh); c.restore();
   let url; try { url = cv.toDataURL('image/webp', .82); if (!url.startsWith('data:image/webp')) url = cv.toDataURL('image/png'); } catch(e){ toast('この動画からは切り抜けませんでした'); return; }
   const a = [x0 + w/2, y0 + h/2];
-  const shape = { type:'ghost', c:S.color, img:url, w, h, k:1, a, b:[clamp(a[0] + w*1.4, .02, .98), a[1]], label:'ここ' };
+  const shape = { type:'ghost', c:S.color, img:url, w, h, k:1, a, b:[clamp(a[0] + w*1.4, .02, .98), a[1]] };
   snapshot(); const m = ensureMoment(S.src.t); m.shapes.push(shape); if (m.show < 5) m.show = 5; save(); renderList();
   setTool('move'); toast('分身ができました。ドラッグして本当にいてほしかった位置へ動かしてください', 3800);
 }
@@ -1009,7 +1024,7 @@ function renderMarkers(){
   if (!d) return;
   for (const m of S.moments){ const el = document.createElement('div'); el.className = 'mk' + (m.pause > 0 ? ' timed' : m.pause === 0 ? ' pass' : ''); el.style.left = (m.t/d*100) + '%'; el.title = fmt(m.t); box.appendChild(el); }
 }
-const PAUSE_OPTS = [[-1,'押すまで停止'],[3,'3秒停止'],[5,'5秒停止'],[10,'10秒停止'],[0,'止めずに流す']];
+const PAUSE_OPTS = [[-1,'押すまで停止'],[2,'2秒停止'],[3,'3秒停止'],[5,'5秒停止'],[8,'8秒停止'],[10,'10秒停止'],[15,'15秒停止'],[0,'止めずに流す']];
 const SHOW_OPTS = [2,3,5,8,10,15];
 function renderList(){
   const list = $('#list'); $('#count').textContent = S.moments.length; lastActive = undefined; renderMarkers();
@@ -1019,19 +1034,25 @@ function renderList(){
     const el = document.createElement('article'); el.className = 'moment'; el.dataset.id = m.id;
     const pOpts = PAUSE_OPTS.slice(); if (!pOpts.some(o => o[0] === m.pause)) pOpts.splice(-1, 0, [m.pause, m.pause + '秒停止']);
     const sOpts = SHOW_OPTS.slice(); if (!sOpts.includes(m.show)) sOpts.push(m.show);
-    el.innerHTML = `<div class="m-head"><button class="m-time" type="button">${fmt(m.t)}</button><span class="m-count">図形 ${m.shapes.length}</span><button class="m-del" type="button">削除</button></div>
+    const open = S.open.has(m.id);
+    el.innerHTML = `<div class="m-head"><button class="m-tog" type="button" aria-expanded="${open}" title="くわしく">▸</button><button class="m-time" type="button">${fmt(m.t)}</button><span class="m-sum"></span>
+      <select class="psel" id="pause-${m.id}" aria-label="一時停止">${pOpts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>
+      <button class="m-del" type="button">削除</button></div>
+      <div class="m-body"${open ? '' : ' hidden'}>
       <textarea id="note-${m.id}" rows="2" placeholder="コメント（映像の下に表示）"></textarea>
-      <div class="pz"><span class="pz-l">この場面で再生を</span><div class="seg" role="group" aria-label="一時停止">${pOpts.map(o => `<button type="button" class="${o[0] > 0 ? 't' : o[0] === 0 ? 'n' : ''}" data-v="${o[0]}" aria-pressed="${o[0] === m.pause}">${o[1]}</button>`).join('')}</div></div>
       <div class="pz"><span class="pz-l">コメントの大きさ</span><div class="seg cfs">${SIZES.map(x => `<button type="button" data-v="${x[0]}" aria-pressed="${(m.cfs || 1) === x[0]}">${x[1]}</button>`).join('')}</div></div>
       <div class="pz"><span class="pz-l">コメントの背景</span><div class="seg cbg">${BGS.map(b => `<button type="button" data-v="${b[0]}" aria-pressed="${(m.cbg || 'dark') === b[0]}">${bgDot(b[0])}${b[1]}</button>`).join('')}</div></div>
       <div class="m-opts"><label>図の表示 <select id="show-${m.id}">${sOpts.map(v => `<option value="${v}">${v}秒</option>`).join('')}</select></label><button type="button" class="mini" data-a="allu" title="ここまでの位置を全部の図にまとめて設定">全部を今の位置まで</button></div>
-      <div class="m-items"></div>`;
+      <div class="m-items"></div></div>`;
     const ta = el.querySelector('textarea'), ss =el.querySelector(`#show-${m.id}`), del = el.querySelector('.m-del'), items = el.querySelector('.m-items');
     ta.value = m.comment; ss.value = String(m.show);
-    el.querySelectorAll('.seg[aria-label="一時停止"] button').forEach(b => b.onclick = () => {
-      snapshot(); m.pause = +b.dataset.v; save(); renderMarkers();
-      el.querySelectorAll('.seg[aria-label="一時停止"] button').forEach(x => x.setAttribute('aria-pressed', x === b));
-    });
+    const psel = el.querySelector('.psel'), sum = el.querySelector('.m-sum'), tog = el.querySelector('.m-tog'), body = el.querySelector('.m-body');
+    const pcls = () => { psel.className = 'psel ' + (m.pause > 0 ? 'p-timed' : m.pause === 0 ? 'p-pass' : 'p-hold'); };
+    psel.value = String(m.pause); pcls();
+    psel.onchange = () => { snapshot(); m.pause = +psel.value; pcls(); save(); renderMarkers(); };
+    const setSum = () => { sum.textContent = m.comment.trim() ? m.comment.trim().replace(/\s+/g, ' ') : `図形 ${m.shapes.length}`; };
+    setSum();
+    tog.onclick = () => { const o = body.hidden; body.hidden = !o; tog.setAttribute('aria-expanded', o); if (o) S.open.add(m.id); else S.open.delete(m.id); };
     el.querySelectorAll('.cfs button').forEach(b => b.onclick = () => {
       snapshot(); const v = +b.dataset.v; if (v === 1) delete m.cfs; else m.cfs = v; save();
       el.querySelectorAll('.cfs button').forEach(x => x.setAttribute('aria-pressed', x === b));
@@ -1041,7 +1062,7 @@ function renderList(){
       el.querySelectorAll('.cbg button').forEach(x => x.setAttribute('aria-pressed', x === b));
     });
     el.querySelector('.m-time').onclick = () => { S.src.pause(); seek(m.t); S.enter.delete(m.id); };
-    ta.oninput = () => { m.comment = ta.value; save(); };
+    ta.oninput = () => { m.comment = ta.value; setSum(); save(); };
     ss.onchange = () => { snapshot(); m.show = +ss.value; save(); };
     const untilHTML = (v) => v != null
       ? `<span class="until"><button type="button" data-a="u" class="set" title="今の位置に変更">〜${fmt(v)}</button><button type="button" data-a="ux" title="終わりの指定を外す">✕</button></span>`
@@ -1093,9 +1114,9 @@ function renderList(){
         q('replay').onclick = () => { S.src.pause(); seek(m.t); S.enter.delete(m.id); };
         const lb = q('label');
         lb.onclick = () => {
-          const inp = document.createElement('input'); inp.type = 'text'; inp.value = s.label || 'ここ'; inp.id = 'lbl-' + m.id + '-' + m.shapes.indexOf(s); inp.style.cssText = 'width:110px;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:12px';
+          const inp = document.createElement('input'); inp.type = 'text'; inp.value = s.label && s.label !== 'ここ' ? s.label : ''; inp.placeholder = '例：ここ'; inp.id = 'lbl-' + m.id + '-' + m.shapes.indexOf(s); inp.style.cssText = 'width:110px;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:12px';
           lb.replaceWith(inp); inp.focus(); inp.select();
-          const done = () => { snapshot(); s.label = inp.value.trim() || 'ここ'; save(); renderList(); };
+          const done = () => { snapshot(); const v = inp.value.trim(); if (v) s.label = v; else delete s.label; save(); renderList(); };
           inp.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) inp.blur(); };
           inp.onblur = done;
         };
@@ -1180,7 +1201,7 @@ $('#back1').onclick = () => step(-1); $('#fwd1').onclick = () => step(1);
 $('#speed').onchange = e => { if (S.src) S.src.rate = +e.target.value; };
 $('#undo').onclick = undo;
 $('#fs').onclick = () => { const w = $('#wrap'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else if (w.requestFullscreen) w.requestFullscreen().catch(() => toast('この環境では全画面にできません')); else toast('この環境では全画面にできません'); };
-$('#addNote').onclick = () => { if (!S.src){ toast('先に動画を開いてください'); return; } S.src.pause(); clearHold(); snapshot(); const m = ensureMoment(S.src.t); save(); renderList(); const ta = document.getElementById('note-' + m.id); if (ta){ ta.focus(); ta.scrollIntoView({ block:'nearest' }); } };
+$('#addNote').onclick = () => { if (!S.src){ toast('先に動画を開いてください'); return; } S.src.pause(); clearHold(); snapshot(); const m = ensureMoment(S.src.t); S.open.add(m.id); save(); renderList(); const ta = document.getElementById('note-' + m.id); if (ta){ ta.focus(); ta.scrollIntoView({ block:'nearest' }); } };
 
 const tl = $('#timeline'); let scrub = false;
 const tlSeek = e => { const r = tl.getBoundingClientRect(); if (S.src && S.src.dur) seek(clamp((e.clientX - r.left) / r.width, 0, 1) * S.src.dur); };
