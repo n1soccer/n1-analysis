@@ -56,7 +56,7 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .stage video{object-fit:contain}
 #ink{touch-action:none;cursor:crosshair}
 .caption.movable{pointer-events:auto;cursor:move;outline:1px dashed rgba(255,255,255,.6);outline-offset:3px;touch-action:none}
-.caption{position:absolute;left:50%;bottom:5%;transform:translateX(-50%);max-width:86%;background:rgba(8,11,10,.82);border-left:4px solid var(--accent);padding:.5em .9em;border-radius:6px;font-weight:700;font-size:clamp(13px,2vw,22px);line-height:1.45;pointer-events:none;text-wrap:balance}
+.caption{position:absolute;left:50%;bottom:5%;transform:translateX(-50%);max-width:86%;background:rgba(8,11,10,.82);border-left:4px solid var(--accent);padding:.5em .9em;border-radius:6px;font-weight:700;font-size:calc(clamp(13px,2vw,22px) * var(--cfs,1));line-height:1.45;pointer-events:none;text-wrap:balance}
 .stage video{transition:filter .25s}
 .stage.held video{filter:saturate(.55) brightness(.78)}
 .frame{position:absolute;inset:0;border:4px solid var(--hold);pointer-events:none;opacity:0;transition:opacity .2s}
@@ -136,6 +136,7 @@ select.sm{background:var(--raise);border:1px solid var(--line);border-radius:8px
 .m-item button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#16130a;font-weight:700}
 .caption[data-bg="white"]{background:rgba(255,255,255,.93);color:#111;border-left-color:#111}
 .caption[data-bg="yellow"]{background:#ffd23f;color:#111;border-left-color:#111}
+.caption[data-bg="pink"]{background:#ff2d78;color:#fff;border-left-color:#fff}
 .caption[data-bg="red"]{background:#e5392f;color:#fff;border-left-color:#fff}
 .caption[data-bg="blue"]{background:#1f7fd6;color:#fff;border-left-color:#fff}
 .caption[data-bg="none"]{background:none;border-left-color:transparent;text-shadow:0 0 4px #000,0 0 2px #000,0 1px 2px #000}
@@ -285,6 +286,8 @@ details textarea{width:100%;min-height:80px;margin-top:8px;background:var(--bg);
         </div>
         <div id="textOpts" class="ropts" hidden>
           <span class="sep"></span>
+          <span class="ro-l">大きさ</span>
+          <div class="seg" id="textFs"></div>
           <span class="ro-l">背景</span>
           <div class="seg" id="textBg"></div>
         </div>
@@ -335,7 +338,7 @@ const $ = s => document.querySelector(s);
 const video = $('#video'), ink = $('#ink'), stage = $('#stage');
 const ctx = ink.getContext('2d');
 const FPS = 30;
-const COLORS = [['#ffd23f','黄'],['#ff4d4d','赤'],['#3ec9ff','青'],['#ffffff','白']];
+const COLORS = [['#ffd23f','黄'],['#ff2d78','ピンク'],['#ff4d4d','赤'],['#3ec9ff','青'],['#ffffff','白']];
 const HINTS = {
   move: '<b>移動</b>：図形・分身・コメントをドラッグで動かす。矢印は両端の●で長さ、真ん中の○で曲がり具合を変える（○をダブルクリックでまっすぐに戻す）。エリアは角の●で形を変え、辺の○で角を追加。',
   arrow: '<b>パス</b>：ドラッグで矢印を描く。「移動」で真ん中の○を引くとカーブになる。',
@@ -350,12 +353,16 @@ const HINTS = {
   tri: '<b>三角</b>：ドラッグで三角のエリアを描く。描いたあと自動で「移動」になるので、角の●を引いて形を整えてください。',
   zone: '<b>四角</b>：ドラッグで四角のエリアを描く。描いたあと自動で「移動」になるので、角の●を引いて形を整えてください。',
   pen: '<b>フリー</b>：自由に線を描く。',
-  text: '<b>文字</b>：タップした位置に文字を置く。背景色はツール欄で選ぶ。置いた文字は右の場面リストで背景を変えられる。',
+  text: '<b>文字</b>：タップした位置に文字を置く。大きさと背景色はツール欄で選ぶ。置いた文字は右の場面リストで大きさ・背景を変えられる。',
   erase: '<b>消す</b>：消したい図形をタップ。'
 };
-const BGS = [['dark','黒','rgba(10,14,12,.82)',null],['white','白','rgba(255,255,255,.93)','#111'],['yellow','黄','#ffd23f','#111'],['red','赤','#e5392f','#fff'],['blue','青','#1f7fd6','#fff'],['none','なし',null,null]];
+const BGS = [['dark','黒','rgba(10,14,12,.82)',null],['white','白','rgba(255,255,255,.93)','#111'],['yellow','黄','#ffd23f','#111'],['pink','ピンク','#ff2d78','#fff'],['red','赤','#e5392f','#fff'],['blue','青','#1f7fd6','#fff'],['none','なし',null,null]];
 const BG = Object.fromEntries(BGS.map(b => [b[0], { key:b[0], name:b[1], fill:b[2], tc:b[3] }]));
 function bgDot(k){ const b = BG[k]; return `<i class="bgdot" style="background:${b.fill || 'transparent'};${k === 'none' ? 'border-style:dashed' : ''}"></i>`; }
+const SIZES = [[0.7,'小'],[1,'中'],[1.4,'大'],[2,'特大']];
+const sizeName = v => (SIZES.find(x => x[0] === (v || 1)) || [0,'中'])[1];
+const nextSize = v => SIZES[(SIZES.findIndex(x => x[0] === (v || 1)) + 1) % SIZES.length][0];
+const textFs = (s, W) => Math.max(10, W*.026*(s.fs || 1));
 const S = { tool:'arrow', color:COLORS[0][0], moments:[], key:'', src:null, lastT:0, skipId:null, holdId:null, holdUntil:null,
   draft:null, drag:null, undo:[], url:null, enter:new Map(), tracking:null, warnedQuota:false };
 const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
@@ -498,7 +505,7 @@ function shapeCenter(s, t, W, H){
     case 'view': { const g = viewGeom(s, t, W, H); return [(g.ox + g.tip[0])/2, (g.oy + g.tip[1])/2]; }
     case 'ghost': return P(s.b);
     case 'link': { const A = findShape(s.from), B = findShape(s.to); if (A && B){ const a = ringCenter(A.s, t), b = ringCenter(B.s, t); return P([(a[0]+b[0])/2, (a[1]+b[1])/2]); } return [0,0]; }
-    case 'text': { const fs = Math.max(14, W*.026); return [s.a[0]*W + fs*(s.s.length*.5 + .6), s.a[1]*H]; }
+    case 'text': { const fs = textFs(s, W); return [s.a[0]*W + fs*(s.s.length*.5 + .6), s.a[1]*H]; }
     default: return s.a ? P(s.a) : [0,0];
   }
 }
@@ -566,7 +573,7 @@ function drawShape(s, W, H, al, t, age){
   } else if (s.type === 'pen'){
     c.beginPath(); s.pts.forEach((p,i) => { const [x,y] = P(p); i ? c.lineTo(x,y) : c.moveTo(x,y); }); c.stroke();
   } else if (s.type === 'text'){
-    const fs = Math.max(14, W*.026), [x,y] = P(s.a), pad = fs*.45, bg = BG[s.bg || 'dark'] || BG.dark;
+    const fs = textFs(s, W), [x,y] = P(s.a), pad = fs*.45, bg = BG[s.bg || 'dark'] || BG.dark;
     c.font = `700 ${fs}px "Noto Sans JP", sans-serif`; c.textBaseline = 'middle';
     const w = c.measureText(s.s).width;
     c.shadowBlur = 0; c.globalAlpha = al;
@@ -729,7 +736,7 @@ function hitTest(np, only){
         if (inside) d = 2; else for (let k = 0; k < pts.length; k++) d = Math.min(d, segDist(p, pts[k], pts[(k+1) % pts.length]));
       }
     }
-    else if (s.type === 'text'){ const [x,y] = P(s.a), fs = Math.max(14, W*.026); d = p[0] >= x && p[0] <= x + fs*(s.s.length+1) && Math.abs(p[1]-y) < fs ? 0 : Infinity; }
+    else if (s.type === 'text'){ const [x,y] = P(s.a), fs = textFs(s, W); d = p[0] >= x && p[0] <= x + fs*(s.s.length+1) && Math.abs(p[1]-y) < fs ? 0 : Infinity; }
     else if (s.type === 'ghost'){
       const fx = s.b[0]*W, fy = (s.b[1] + s.h*s.k/2)*H, gw = s.w*s.k*W, gh = s.h*s.k*H;
       if (Math.hypot(p[0] - (fx + gw/2), p[1] - fy) < 16){ d = -1; part = 'resize'; }
@@ -897,7 +904,7 @@ function openText(p){
 function commitText(){
   if (textin.hidden) return; const v = textin.value.trim(); textin.hidden = true;
   if (!v || !textPos) return;
-  snapshot(); ensureMoment(S.src.t).shapes.push({ type:'text', c:S.color, bg:S.textBg, a:textPos, s:v }); save(); renderList();
+  snapshot(); ensureMoment(S.src.t).shapes.push({ type:'text', c:S.color, bg:S.textBg, fs:S.textFs, a:textPos, s:v }); save(); renderList();
 }
 textin.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing){ e.preventDefault(); commitText(); } else if (e.key === 'Escape'){ textin.hidden = true; } });
 textin.addEventListener('blur', commitText);
@@ -988,6 +995,7 @@ function updateUI(now){
   S.capId = cm ? cm.id : null;
   cap.hidden = !txt; if (cap.textContent !== txt) cap.textContent = txt;
   const cbg = cm && cm.cbg ? cm.cbg : 'dark'; if (cap.dataset.bg !== cbg) cap.dataset.bg = cbg;
+  const cfs = cm && cm.cfs ? cm.cfs : 1; if (cap.dataset.fs !== String(cfs)){ cap.dataset.fs = cfs; cap.style.setProperty('--cfs', cfs); }
   if (cm && cm.cpos){ cap.style.left = cm.cpos[0]*100 + '%'; cap.style.top = cm.cpos[1]*100 + '%'; cap.style.bottom = 'auto'; cap.style.transform = 'translate(-50%,-50%)'; }
   else { cap.style.left = ''; cap.style.top = ''; cap.style.bottom = ''; cap.style.transform = ''; }
   cap.classList.toggle('movable', !!cm && s.paused && !S.tracking);
@@ -1014,6 +1022,7 @@ function renderList(){
     el.innerHTML = `<div class="m-head"><button class="m-time" type="button">${fmt(m.t)}</button><span class="m-count">図形 ${m.shapes.length}</span><button class="m-del" type="button">削除</button></div>
       <textarea id="note-${m.id}" rows="2" placeholder="コメント（映像の下に表示）"></textarea>
       <div class="pz"><span class="pz-l">この場面で再生を</span><div class="seg" role="group" aria-label="一時停止">${pOpts.map(o => `<button type="button" class="${o[0] > 0 ? 't' : o[0] === 0 ? 'n' : ''}" data-v="${o[0]}" aria-pressed="${o[0] === m.pause}">${o[1]}</button>`).join('')}</div></div>
+      <div class="pz"><span class="pz-l">コメントの大きさ</span><div class="seg cfs">${SIZES.map(x => `<button type="button" data-v="${x[0]}" aria-pressed="${(m.cfs || 1) === x[0]}">${x[1]}</button>`).join('')}</div></div>
       <div class="pz"><span class="pz-l">コメントの背景</span><div class="seg cbg">${BGS.map(b => `<button type="button" data-v="${b[0]}" aria-pressed="${(m.cbg || 'dark') === b[0]}">${bgDot(b[0])}${b[1]}</button>`).join('')}</div></div>
       <div class="m-opts"><label>図の表示 <select id="show-${m.id}">${sOpts.map(v => `<option value="${v}">${v}秒</option>`).join('')}</select></label><button type="button" class="mini" data-a="allu" title="ここまでの位置を全部の図にまとめて設定">全部を今の位置まで</button></div>
       <div class="m-items"></div>`;
@@ -1022,6 +1031,10 @@ function renderList(){
     el.querySelectorAll('.seg[aria-label="一時停止"] button').forEach(b => b.onclick = () => {
       snapshot(); m.pause = +b.dataset.v; save(); renderMarkers();
       el.querySelectorAll('.seg[aria-label="一時停止"] button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    });
+    el.querySelectorAll('.cfs button').forEach(b => b.onclick = () => {
+      snapshot(); const v = +b.dataset.v; if (v === 1) delete m.cfs; else m.cfs = v; save();
+      el.querySelectorAll('.cfs button').forEach(x => x.setAttribute('aria-pressed', x === b));
     });
     el.querySelectorAll('.cbg button').forEach(b => b.onclick = () => {
       snapshot(); if (b.dataset.v === 'dark') delete m.cbg; else m.cbg = b.dataset.v; save();
@@ -1054,7 +1067,7 @@ function renderList(){
       let extra = '';
       if (s.type === 'text'){
         const cur = BG[s.bg || 'dark'] || BG.dark;
-        extra = `<button type="button" data-a="bg">${bgDot(cur.key)}背景：${cur.name}</button>`;
+        extra = `<button type="button" data-a="fs">大きさ：${sizeName(s.fs)}</button><button type="button" data-a="bg">${bgDot(cur.key)}背景：${cur.name}</button>`;
       } else if (s.type === 'ring'){
         const opL = { 1:'濃い', 0.6:'普通', 0.3:'薄い' }[s.op ?? .6] || '普通', te = trackEnd(s);
         extra = `<button type="button" data-a="st">${s.st === 'dash' ? '点線' : '実線'}</button><button type="button" data-a="op">${opL}</button><button type="button" data-a="hl" aria-pressed="${!!s.hl}">スポット</button><button type="button" data-a="track">自動で追いかける</button>${te > 0 ? '<button type="button" data-a="clear">追従をやめる</button>' : ''}`;
@@ -1067,6 +1080,7 @@ function renderList(){
         ? `文字「${s.s.length > 10 ? s.s.slice(0,10) + '…' : s.s}」`
         : `${nm}${cnt[nm] > 1 || m.shapes.filter(x => x.type === s.type).length > 1 ? cnt[nm] : ''}${te > 0 ? `（${(te - m.t).toFixed(1)}秒 追従）` : ''}${s.pulse ? '・強調中' : ''}`;
       const q = k => row.querySelector(`[data-a="${k}"]`);
+      if (s.type === 'text') q('fs').onclick = () => { snapshot(); s.fs = nextSize(s.fs); if (s.fs === 1) delete s.fs; save(); renderList(); };
       if (s.type === 'text') q('bg').onclick = () => { snapshot(); const i = BGS.findIndex(b => b[0] === (s.bg || 'dark')); s.bg = BGS[(i+1) % BGS.length][0]; save(); renderList(); };
       if (s.type === 'ring'){
         q('st').onclick = () => { snapshot(); s.st = s.st === 'dash' ? 'solid' : 'dash'; save(); renderList(); };
@@ -1136,13 +1150,17 @@ function syncRingOpts(){
   document.querySelectorAll('#ringOp button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.v === S.ringOp));
   $('#ringHl').setAttribute('aria-pressed', !!S.ringHl);
   document.querySelectorAll('#textBg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === S.textBg));
+  document.querySelectorAll('#textFs button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.v === S.textFs));
   document.querySelectorAll('#viewW button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.v === S.viewW));
   document.querySelectorAll('#pulseP button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.v === S.pulseP));
 }
 S.viewW = 30; S.pulseP = 1;
 document.querySelectorAll('#pulseP button').forEach(b => b.onclick = () => { S.pulseP = +b.dataset.v; syncRingOpts(); });
 document.querySelectorAll('#viewW button').forEach(b => b.onclick = () => { S.viewW = +b.dataset.v; syncRingOpts(); });
-S.ringHl = false; S.textBg = 'dark';
+S.ringHl = false; S.textBg = 'dark'; S.textFs = 1;
+try { S.textFs = +(localStorage.getItem('n1va:textFs') || 1); if (!SIZES.some(x => x[0] === S.textFs)) S.textFs = 1; } catch(e){}
+$('#textFs').innerHTML = SIZES.map(x => `<button type="button" data-v="${x[0]}">${x[1]}</button>`).join('');
+document.querySelectorAll('#textFs button').forEach(b => b.onclick = () => { S.textFs = +b.dataset.v; try { localStorage.setItem('n1va:textFs', S.textFs); } catch(e){} syncRingOpts(); });
 try { S.textBg = localStorage.getItem('n1va:textBg') || 'dark'; if (!BG[S.textBg]) S.textBg = 'dark'; } catch(e){}
 $('#ringHl').onclick = () => { S.ringHl = !S.ringHl; syncRingOpts(); };
 $('#textBg').innerHTML = BGS.map(b => `<button type="button" data-v="${b[0]}">${bgDot(b[0])}${b[1]}</button>`).join('');
@@ -1251,7 +1269,7 @@ function wrapLines(c, text, maxW){
   }
   return out;
 }
-const CAP_BG = { dark:['rgba(8,11,10,.82)','#e8eee9','#ffd23f'], white:['rgba(255,255,255,.93)','#111','#111'], yellow:['#ffd23f','#111','#111'], red:['#e5392f','#fff','#fff'], blue:['#1f7fd6','#fff','#fff'], none:[null,'#fff',null] };
+const CAP_BG = { dark:['rgba(8,11,10,.82)','#e8eee9','#ffd23f'], white:['rgba(255,255,255,.93)','#111','#111'], yellow:['#ffd23f','#111','#111'], pink:['#ff2d78','#fff','#fff'], red:['#e5392f','#fff','#fff'], blue:['#1f7fd6','#fff','#fff'], none:[null,'#fff',null] };
 function exportTick(){
   const E = S.exporting, c = E.ctx, W = E.cv.width, H = E.cv.height, k = W / stage.getBoundingClientRect().width;
   c.drawImage(video, 0, 0, W, H);
