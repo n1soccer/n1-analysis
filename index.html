@@ -58,7 +58,6 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .caption.movable{pointer-events:auto;cursor:move;outline:1px dashed rgba(255,255,255,.6);outline-offset:3px;touch-action:none}
 .caption{position:absolute;left:50%;bottom:5%;transform:translateX(-50%);max-width:86%;background:rgba(8,11,10,.82);border-left:4px solid var(--accent);padding:.5em .9em;border-radius:6px;font-weight:700;font-size:calc(clamp(13px,2vw,22px) * var(--cfs,1));line-height:1.45;pointer-events:none;text-wrap:balance}
 .stage video{transition:filter .25s}
-.stage.held video{filter:saturate(.55) brightness(.78)}
 .frame{position:absolute;inset:0;border:4px solid var(--hold);pointer-events:none;opacity:0;transition:opacity .2s}
 .stage.held .frame{opacity:1}
 .stage.tracking .frame{opacity:1;border-color:var(--accent)}
@@ -416,10 +415,12 @@ function ensureMoment(t){
 }
 const lastMomentBefore = t => { let r = null; for (const m of S.moments) if (m.t <= t + 0.045) r = m; return r; };
 function trackEnd(s){ return s.track && s.track.length > 1 ? s.track[s.track.length-1][0] : -1; }
+function nextMomentT(m){ let n = null; for (const x of S.moments) if (x.t > m.t + 0.045 && (n == null || x.t < n)) n = x.t; return n; }
 function shapeEnd(m, s){
   if (s.until != null) return s.until;
-  if (s.ref){ const R = findShape(s.ref); return Math.max(m.t + m.show, R ? trackEnd(R.s) : -1); }
-  return Math.max(m.t + m.show, trackEnd(s));
+  const e = s.ref ? (() => { const R = findShape(s.ref); return Math.max(m.t + m.show, R ? trackEnd(R.s) : -1); })() : Math.max(m.t + m.show, trackEnd(s));
+  const nx = nextMomentT(m);
+  return nx != null ? Math.min(e, nx) : e;
 }
 const GK = .42;
 function viewOrigin(s, t){ if (s.ref){ const R = findShape(s.ref); if (R) return ringCenter(R.s, t); } return s.a; }
@@ -438,7 +439,7 @@ function shapeOn(m, s, t){
   if (t < m.t - 0.045) return false;
   if (s.type === 'link'){ if (s.until != null && t >= s.until) return false; const A = findShape(s.from), B = findShape(s.to); return !!(A && B && shapeOn(A.m, A.s, t) && shapeOn(B.m, B.s, t)); }
   if (t < shapeEnd(m, s)) return true;
-  return S.tool === 'move' && s.type === 'ring' && S.src && S.src.paused && lastMomentBefore(t) === m && t < m.t + 60;
+  return false;
 }
 function shapeAlpha(m, s, t){
   if (s.type === 'link'){ const A = findShape(s.from), B = findShape(s.to); return A && B ? Math.min(shapeAlpha(A.m, A.s, t), shapeAlpha(B.m, B.s, t)) : 0; }
@@ -1295,7 +1296,6 @@ function exportTick(){
   const E = S.exporting, c = E.ctx, W = E.cv.width, H = E.cv.height, k = W / stage.getBoundingClientRect().width;
   c.drawImage(video, 0, 0, W, H);
   const held = !!S.holdId;
-  if (held){ c.fillStyle = 'rgba(0,0,0,.24)'; c.fillRect(0, 0, W, H); }
   c.drawImage(ink, 0, 0, W, H);
   const cap = $('#caption');
   if (!cap.hidden && cap.textContent){
