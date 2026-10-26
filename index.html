@@ -452,7 +452,9 @@ function shapeOn(m, s, t){
 }
 function shapeAlpha(m, s, t){
   if (s.type === 'link'){ const A = findShape(s.from), B = findShape(s.to); return A && B ? Math.min(shapeAlpha(A.m, A.s, t), shapeAlpha(B.m, B.s, t)) : 0; }
-  const e = shapeEnd(m, s); return t < e ? clamp((e - t) / .3, 0, 1) : .45; }
+  const e = shapeEnd(m, s); if (t >= e) return .45;
+  const fade = Math.min(.3, Math.max(0, e - m.t) * .3);
+  return fade > 0 ? clamp((e - t) / fade, 0, 1) : 1; }
 const momentOn = (m, t) => (t >= m.t - 0.045 && t < m.t + m.show) || m.shapes.some(s => shapeOn(m, s, t));
 function ringCenter(s, t){
   const k = s.track; if (!k || !k.length) return s.a;
