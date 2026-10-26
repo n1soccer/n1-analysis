@@ -56,6 +56,7 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .stage video{object-fit:contain}
 #ink{touch-action:none;cursor:crosshair}
 .caption.movable{pointer-events:auto;cursor:move;outline:1px dashed rgba(255,255,255,.6);outline-offset:3px;touch-action:none}
+.caption{white-space:pre-line}
 .caption{position:absolute;left:50%;bottom:5%;transform:translateX(-50%);max-width:86%;background:rgba(8,11,10,.82);border-left:4px solid var(--accent);padding:.5em .9em;border-radius:6px;font-weight:700;font-size:calc(clamp(13px,2vw,22px) * var(--cfs,1));line-height:1.45;pointer-events:none;text-wrap:balance}
 .stage video{transition:filter .25s}
 .frame{position:absolute;inset:0;border:4px solid var(--hold);pointer-events:none;opacity:0;transition:opacity .2s}
@@ -90,6 +91,8 @@ header{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#16130a;font-weight:700}
 .seg button.t[aria-pressed="true"]{background:var(--hold);border-color:var(--hold);color:#06202b}
 .seg button.n[aria-pressed="true"]{background:var(--muted);border-color:var(--muted);color:#0d1210}
+.textin{resize:none;font-family:inherit;line-height:1.3;color:var(--fg);overflow:hidden;
+}
 .textin{position:absolute;transform:translate(0,-50%);min-width:160px;max-width:60%;background:rgba(8,11,10,.9);border:2px solid var(--accent);border-radius:6px;padding:4px 8px;font-weight:700;outline:none}
 .drop{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:16px;cursor:pointer;color:var(--muted);background:repeating-linear-gradient(135deg,#101714 0 18px,#131b17 18px 36px);border:2px dashed var(--line);border-radius:10px;font-size:13px}
 .drop svg{width:44px;height:44px;color:var(--accent)}
@@ -234,7 +237,7 @@ details textarea{width:100%;min-height:80px;margin-top:8px;background:var(--bg);
             <span class="b-btns"><button id="badgeKeep" type="button">このまま止める</button><button class="go" id="badgeGo" type="button"></button></span>
             <span class="b-bar"><div id="badgeBar"></div></span>
           </div>
-          <input class="textin" id="textin" type="text" placeholder="文字を入力して Enter" hidden>
+          <textarea class="textin" id="textin" rows="1" placeholder="文字を入力（改行できます）&#10;外をタップで確定" hidden></textarea>
         </div>
       </div>
 
@@ -364,7 +367,7 @@ const HINTS = {
   tri: '<b>三角</b>：ドラッグで三角のエリアを描く。描いたあと自動で「移動」になるので、角の●を引いて形を整えてください。',
   zone: '<b>四角</b>：ドラッグで四角のエリアを描く。描いたあと自動で「移動」になるので、角の●を引いて形を整えてください。',
   pen: '<b>フリー</b>：自由に線を描く。',
-  text: '<b>文字</b>：タップした位置に文字を置く。大きさと背景色はツール欄で選ぶ。置いた文字は右の場面リストで大きさ・背景を変えられる。',
+  text: '<b>文字</b>：タップした位置に文字を置く。Enterで改行、外をタップで確定。「移動」で文字をダブルクリックすると書き直せる。大きさと背景色はツール欄で選ぶ。置いた文字は右の場面リストで大きさ・背景を変えられる。',
   erase: '<b>消す</b>：消したい図形をタップ。'
 };
 const BGS = [['dark','黒','rgba(10,14,12,.82)',null],['white','白','rgba(255,255,255,.93)','#111'],['yellow','黄','#ffd23f','#111'],['pink','ピンク','#ff2d78','#fff'],['red','赤','#e5392f','#fff'],['blue','青','#1f7fd6','#fff'],['none','なし',null,null]];
@@ -374,6 +377,12 @@ const SIZES = [[0.7,'小'],[1,'中'],[1.4,'大'],[2,'特大']];
 const sizeName = v => (SIZES.find(x => x[0] === (v || 1)) || [0,'中'])[1];
 const nextSize = v => SIZES[(SIZES.findIndex(x => x[0] === (v || 1)) + 1) % SIZES.length][0];
 const textFs = (s, W) => Math.max(10, W*.026*(s.fs || 1));
+function textBox(s, W, H){
+  const fs = textFs(s, W), pad = fs*.45, lh = fs*1.3, lines = String(s.s).split('\n');
+  ctx.save(); ctx.font = `700 ${fs}px "Noto Sans JP", sans-serif`; const tw = Math.max(...lines.map(l => ctx.measureText(l).width)); ctx.restore();
+  const bw = tw + pad*2, bh = (lines.length - 1)*lh + fs + pad*1.2;
+  return { fs, pad, lh, lines, bw, bh, x:s.a[0]*W, top:s.a[1]*H - bh/2 };
+}
 const S = { open:new Set(), tool:'arrow', color:COLORS[0][0], moments:[], key:'', src:null, lastT:0, skipId:null, holdId:null, holdUntil:null,
   draft:null, drag:null, undo:[], url:null, enter:new Map(), tracking:null, warnedQuota:false };
 const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
@@ -518,7 +527,7 @@ function shapeCenter(s, t, W, H){
     case 'view': { const g = viewGeom(s, t, W, H); return [(g.ox + g.tip[0])/2, (g.oy + g.tip[1])/2]; }
     case 'ghost': return P(s.b);
     case 'link': { const A = findShape(s.from), B = findShape(s.to); if (A && B){ const a = ringCenter(A.s, t), b = ringCenter(B.s, t); return P([(a[0]+b[0])/2, (a[1]+b[1])/2]); } return [0,0]; }
-    case 'text': { const fs = textFs(s, W); return [s.a[0]*W + fs*(s.s.length*.5 + .6), s.a[1]*H]; }
+    case 'text': { const tb = textBox(s, W, H); return [tb.x + tb.bw/2, tb.top + tb.bh/2]; }
     default: return s.a ? P(s.a) : [0,0];
   }
 }
@@ -586,18 +595,19 @@ function drawShape(s, W, H, al, t, age){
   } else if (s.type === 'pen'){
     c.beginPath(); s.pts.forEach((p,i) => { const [x,y] = P(p); i ? c.lineTo(x,y) : c.moveTo(x,y); }); c.stroke();
   } else if (s.type === 'text'){
-    const fs = textFs(s, W), [x,y] = P(s.a), pad = fs*.45, bg = BG[s.bg || 'dark'] || BG.dark;
+    if (S.editText === s){ c.restore(); return; }
+    const tb = textBox(s, W, H), { fs, pad, lh, lines, bw, bh, x, top } = tb, bg = BG[s.bg || 'dark'] || BG.dark;
     c.font = `700 ${fs}px "Noto Sans JP", sans-serif`; c.textBaseline = 'middle';
-    const w = c.measureText(s.s).width;
     c.shadowBlur = 0; c.globalAlpha = al;
     if (bg.fill){
       c.fillStyle = bg.fill;
-      c.beginPath(); if (c.roundRect) c.roundRect(x, y - fs*.5 - pad*.6, w + pad*2, fs + pad*1.2, fs*.25); else c.rect(x, y - fs*.5 - pad*.6, w + pad*2, fs + pad*1.2); c.fill();
+      c.beginPath(); if (c.roundRect) c.roundRect(x, top, bw, bh, fs*.25); else c.rect(x, top, bw, bh); c.fill();
     }
-    if (bg.key === 'dark'){ c.fillStyle = s.c; c.fillRect(x, y - fs*.5 - pad*.6, Math.max(3, fs*.14), fs + pad*1.2); }
-    if (bg.key === 'none'){ c.lineWidth = fs*.2; c.strokeStyle = 'rgba(0,0,0,.85)'; c.strokeText(s.s, x + pad*1.2, y + 1); }
+    if (bg.key === 'dark'){ c.fillStyle = s.c; c.fillRect(x, top, Math.max(3, fs*.14), bh); }
+    const ly = i => top + pad*.6 + fs*.5 + i*lh + 1;
+    if (bg.key === 'none'){ c.lineWidth = fs*.2; c.strokeStyle = 'rgba(0,0,0,.85)'; lines.forEach((l, i) => c.strokeText(l, x + pad*1.2, ly(i))); }
     c.fillStyle = bg.tc || s.c;
-    c.fillText(s.s, x + pad*1.2, y + 1);
+    lines.forEach((l, i) => c.fillText(l, x + pad*1.2, ly(i)));
   } else if (s.type === 'view'){
     const g = viewGeom(s, t, W, H);
     if (g.R > 3){
@@ -752,7 +762,7 @@ function hitTest(np, only){
         if (inside) d = 2; else for (let k = 0; k < pts.length; k++) d = Math.min(d, segDist(p, pts[k], pts[(k+1) % pts.length]));
       }
     }
-    else if (s.type === 'text'){ const [x,y] = P(s.a), fs = textFs(s, W); d = p[0] >= x && p[0] <= x + fs*(s.s.length+1) && Math.abs(p[1]-y) < fs ? 0 : Infinity; }
+    else if (s.type === 'text'){ const tb = textBox(s, W, H); d = p[0] >= tb.x - 4 && p[0] <= tb.x + tb.bw + 4 && p[1] >= tb.top - 4 && p[1] <= tb.top + tb.bh + 4 ? 0 : Infinity; }
     else if (s.type === 'ghost'){
       const fx = s.b[0]*W, fy = (s.b[1] + s.h*s.k/2)*H, gw = s.w*s.k*W, gh = s.h*s.k*H;
       if (Math.hypot(p[0] - (fx + gw/2), p[1] - fy) < 16){ d = -1; part = 'resize'; }
@@ -822,6 +832,7 @@ ink.addEventListener('pointerdown', e => {
 ink.addEventListener('dblclick', e => {
   if (S.tool !== 'move' || !S.src) return;
   const h = hitTest(norm(e));
+  if (h && h.s.type === 'text'){ editText(h.s); return; }
   if (h && h.s.type === 'arrow' && h.part === 'mid' && h.s.ctl){ snapshot(); delete h.s.ctl; save(); return; }
   if (h && h.s.type === 'zone' && h.part === 'v'){
     if (h.s.pts.length <= 3){ toast('角は3つより減らせません'); return; }
@@ -913,16 +924,27 @@ function makeGhost(d){
 
 /* ---------- text ---------- */
 const textin = $('#textin'); let textPos = null;
-function openText(p){
-  textPos = p; textin.value = ''; textin.style.left = (p[0]*100) + '%'; textin.style.top = (p[1]*100) + '%';
-  textin.style.borderColor = S.color; textin.hidden = false; setTimeout(() => textin.focus(), 0);
+function fitTextin(){ textin.style.height = 'auto'; textin.style.height = textin.scrollHeight + 'px'; }
+function openText(p, edit){
+  if (!textin.hidden) commitText();
+  S.editText = edit || null;
+  textPos = p; textin.value = edit ? edit.s : ''; textin.style.left = (p[0]*100) + '%'; textin.style.top = (p[1]*100) + '%';
+  textin.style.borderColor = edit ? edit.c : S.color; textin.hidden = false; fitTextin(); setTimeout(() => { textin.focus(); fitTextin(); }, 0);
 }
 function commitText(){
-  if (textin.hidden) return; const v = textin.value.trim(); textin.hidden = true;
-  if (!v || !textPos) return;
+  if (textin.hidden) return; const v = textin.value.replace(/\s+$/, '').replace(/^\n+/, ''); textin.hidden = true;
+  const ed = S.editText; S.editText = null;
+  if (ed){
+    snapshot();
+    if (v.trim()) ed.s = v; else S.moments.forEach(m => { const i = m.shapes.indexOf(ed); if (i >= 0) m.shapes.splice(i, 1); });
+    save(); renderList(); return;
+  }
+  if (!v.trim() || !textPos) return;
   snapshot(); ensureMoment(S.src.t).shapes.push({ type:'text', c:S.color, bg:S.textBg, fs:S.textFs, a:textPos, s:v }); save(); renderList();
 }
-textin.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing){ e.preventDefault(); commitText(); } else if (e.key === 'Escape'){ textin.hidden = true; } });
+function editText(s){ if (!S.src) return; S.src.pause(); clearHold(); openText([s.a[0], s.a[1]], s); }
+textin.addEventListener('input', fitTextin);
+textin.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.isComposing){ e.preventDefault(); commitText(); } else if (e.key === 'Escape'){ textin.hidden = true; S.editText = null; } });
 textin.addEventListener('blur', commitText);
 
 /* ---------- auto tracking (選手マークの追従) ---------- */
@@ -1089,7 +1111,7 @@ function renderList(){
       let extra = '';
       if (s.type === 'text'){
         const cur = BG[s.bg || 'dark'] || BG.dark;
-        extra = `<button type="button" data-a="fs">大きさ：${sizeName(s.fs)}</button><button type="button" data-a="bg">${bgDot(cur.key)}背景：${cur.name}</button>`;
+        extra = `<button type="button" data-a="edit">文字を直す</button><button type="button" data-a="fs">大きさ：${sizeName(s.fs)}</button><button type="button" data-a="bg">${bgDot(cur.key)}背景：${cur.name}</button>`;
       } else if (s.type === 'ring'){
         const opL = { 1:'濃い', 0.6:'普通', 0.3:'薄い' }[s.op ?? .6] || '普通', te = trackEnd(s);
         extra = `<button type="button" data-a="st">${s.st === 'dash' ? '点線' : '実線'}</button><button type="button" data-a="op">${opL}</button><button type="button" data-a="hl" aria-pressed="${!!s.hl}">スポット</button><button type="button" data-a="track">自動で追いかける</button>${te > 0 ? '<button type="button" data-a="clear">追従をやめる</button>' : ''}`;
@@ -1099,9 +1121,10 @@ function renderList(){
       const te = s.type === 'ring' ? trackEnd(s) : -1;
       row.innerHTML = `<i class="dot" style="background:${s.c || '#fff'}"></i><span></span>${extra}${untilHTML(s.until)}`;
       row.querySelector('span').textContent = s.type === 'text'
-        ? `文字「${s.s.length > 10 ? s.s.slice(0,10) + '…' : s.s}」`
+        ? `文字「${(t => t.length > 10 ? t.slice(0,10) + '…' : t)(s.s.replace(/\n/g, ' '))}」`
         : `${nm}${cnt[nm] > 1 || m.shapes.filter(x => x.type === s.type).length > 1 ? cnt[nm] : ''}${te > 0 ? `（${(te - m.t).toFixed(1)}秒 追従）` : ''}${s.pulse ? '・強調中' : ''}`;
       const q = k => row.querySelector(`[data-a="${k}"]`);
+      if (s.type === 'text') q('edit').onclick = () => editText(s);
       if (s.type === 'text') q('fs').onclick = () => { snapshot(); s.fs = nextSize(s.fs); if (s.fs === 1) delete s.fs; save(); renderList(); };
       if (s.type === 'text') q('bg').onclick = () => { snapshot(); const i = BGS.findIndex(b => b[0] === (s.bg || 'dark')); s.bg = BGS[(i+1) % BGS.length][0]; save(); renderList(); };
       if (s.type === 'ring'){
