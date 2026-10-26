@@ -190,6 +190,21 @@ details .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 details textarea{width:100%;min-height:80px;margin-top:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px;font-family:var(--f-mono);font-size:11px;color:var(--fg)}
 .note{font-size:12px;color:var(--muted);margin:0}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 16px;border-radius:999px;font-weight:500;font-size:13px;z-index:10;max-width:90vw;text-align:center}
+.work{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:12px}
+.work-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.work-h h3{margin:0;font-size:14px}
+.saved{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.saved.ok{color:#6fd39a}
+.saved.err{color:var(--danger)}
+.work-btns{display:flex;flex-wrap:wrap;gap:6px}
+.found{border:1px solid var(--accent);border-radius:8px;padding:10px;display:grid;gap:8px;font-size:13px;background:var(--raise)}
+.found .row{display:flex;gap:6px;flex-wrap:wrap}
+.wlist{display:grid;gap:6px;max-height:50vh;overflow:auto}
+.witem{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--raise)}
+.witem .wi-t{flex:1;min-width:0;display:grid;gap:2px}
+.witem .wi-t b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.witem .wi-t small{font-size:12px;color:var(--muted)}
+.witem .cur{font-size:11px;color:var(--accent)}
 .modal{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:rgba(5,8,7,.72)}
 .modal.low{place-items:end center;background:rgba(5,8,7,.25);padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
 .sheet{width:min(520px,100%);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:12px;box-shadow:0 20px 50px rgba(0,0,0,.5)}
@@ -311,17 +326,19 @@ details textarea{width:100%;min-height:80px;margin-top:8px;background:var(--bg);
 
     <aside class="side">
       <h2>場面 <small id="count">0</small></h2>
+      <div class="found" id="found" hidden><span id="foundText"></span><div class="row"><button class="btn primary" id="foundLoad" type="button">読み込む</button><button class="btn" id="foundSkip" type="button">新しく始める</button></div></div>
       <button class="btn" id="addNote" type="button">＋ ここで一時停止（コメント）</button>
       <div class="list" id="list"></div>
-      <p class="note">描いた図形とコメントはこのブラウザに動画ごと保存されます。同じ動画ファイルを開くと復元されます。</p>
-      <details>
-        <summary>データの書き出し・読み込み</summary>
-        <div class="row">
-          <button class="btn" id="copyJson" type="button">JSONをコピー</button>
-          <button class="btn" id="importJson" type="button">貼り付けて読み込む</button>
+      <section class="work" aria-labelledby="workH">
+        <div class="work-h"><h3 id="workH">作業の保存</h3><span class="saved" id="saveState">動画を開くと自動で保存</span></div>
+        <div class="work-btns">
+          <button class="btn" id="workSave" type="button">作業をファイルに保存</button>
+          <button class="btn" id="workOpen" type="button">作業ファイルを開く</button>
+          <button class="btn" id="workList" type="button">保存した作業の一覧</button>
         </div>
-        <textarea id="jsonBox" placeholder="ここにJSONを貼り付け"></textarea>
-      </details>
+        <input class="vh" type="file" id="workFile" accept=".json,application/json">
+        <p class="note">作業はこの端末に自動で保存され、同じ動画を開くと続きから編集できます。別の端末で続けるときや控えを残すときは「作業をファイルに保存」を使ってください。</p>
+      </section>
     </aside>
   </main>
 </div>
@@ -335,6 +352,14 @@ details textarea{width:100%;min-height:80px;margin-top:8px;background:var(--bg);
       <span class="pz-l">止めてから続きを再生します。</span></div>
     <label class="chk" id="exAudioWrap"><input type="checkbox" id="exAudio" checked> 動画の音声も入れる</label>
     <div class="row"><button class="btn" id="exCancel" type="button">やめる</button><button class="btn primary" id="exStart" type="button">書き出しを始める</button></div>
+  </div>
+</div>
+<div class="modal" id="workModal" hidden>
+  <div class="sheet" role="dialog" aria-labelledby="wmH">
+    <h3 id="wmH">保存した作業の一覧</h3>
+    <p class="note" id="wmNote">今開いている動画に読み込む作業を選んでください。</p>
+    <div class="wlist" id="wlist"></div>
+    <div class="row"><button class="btn" id="wmClose" type="button">閉じる</button></div>
   </div>
 </div>
 <div class="modal low" id="exProg" hidden>
@@ -405,11 +430,43 @@ function videoSource(v){
 }
 
 /* ---------- storage / undo ---------- */
-function load(key){ try { const r = localStorage.getItem(key); if (r){ const d = JSON.parse(r); if (Array.isArray(d.moments)) return normMoments(d.moments); } } catch(e){} return []; }
-let saveT; function save(){ clearTimeout(saveT); saveT = setTimeout(() => {
-  try { localStorage.setItem(S.key, JSON.stringify({ moments:S.moments })); }
-  catch(e){ if (!S.warnedQuota){ S.warnedQuota = true; toast('ブラウザの保存容量がいっぱいです。分身を減らすか「JSONをコピー」で控えてください', 4500); } }
-}, 300); }
+const IDB = (() => {
+  let p;
+  const open = () => p || (p = new Promise((res, rej) => {
+    try { const r = indexedDB.open('n1va', 1); r.onupgradeneeded = () => r.result.createObjectStore('works', { keyPath:'key' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }
+    catch(e){ rej(e); }
+  }));
+  const tx = (mode, fn) => open().then(db => new Promise((res, rej) => {
+    const t = db.transaction('works', mode), q = fn(t.objectStore('works'));
+    t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+  }));
+  return { get:k => tx('readonly', st => st.get(k)), put:v => tx('readwrite', st => st.put(v)), all:() => tx('readonly', st => st.getAll()), del:k => tx('readwrite', st => st.delete(k)) };
+})();
+function legacyLoad(key){ try { const r = localStorage.getItem(key); if (r){ const d = JSON.parse(r); if (Array.isArray(d.moments)) return d.moments; } } catch(e){} return null; }
+const hm = d => { const x = new Date(d); return `${x.getMonth()+1}/${x.getDate()} ${String(x.getHours()).padStart(2,'0')}:${String(x.getMinutes()).padStart(2,'0')}`; };
+function setSaveState(txt, cls){ const el = $('#saveState'); el.textContent = txt; el.className = 'saved' + (cls ? ' ' + cls : ''); }
+function workRecord(){ return { key:S.key, name:S.fileName || '', dur:S.src ? S.src.dur : 0, updated:Date.now(), moments:S.moments }; }
+let saveT; function save(){
+  if (!S.src || S.loading) return;
+  clearTimeout(saveT); setSaveState('保存中…');
+  saveT = setTimeout(() => {
+    const rec = workRecord();
+    IDB.put(rec).then(() => { setSaveState(`自動保存済み ${hm(rec.updated)}`, 'ok'); try { localStorage.removeItem(rec.key); } catch(e){} })
+      .catch(() => {
+        try { localStorage.setItem(rec.key, JSON.stringify({ moments:rec.moments })); setSaveState(`自動保存済み ${hm(rec.updated)}`, 'ok'); }
+        catch(e){ setSaveState('保存できませんでした', 'err'); if (!S.warnedQuota){ S.warnedQuota = true; toast('この端末の保存容量がいっぱいです。「作業をファイルに保存」で控えてください', 4500); } }
+      });
+  }, 300);
+}
+function cleanMoments(arr){
+  return normMoments(arr.filter(m => m && typeof m.t === 'number' && Array.isArray(m.shapes))
+    .map(m => ({ ...m, id:m.id || uid(), pause:m.pause ?? -1, show:m.show ?? 5, comment:m.comment || '' })))
+    .sort((a,b) => a.t - b.t);
+}
+function applyWork(arr, msg){
+  snapshot(); S.moments = cleanMoments(arr); S.open = new Set(); S.enter.clear(); S.loading = false;
+  save(); renderList(); toast(msg || `${S.moments.length}件の場面を読み込みました`);
+}
 function snapshot(){ S.undo.push(JSON.stringify(S.moments)); if (S.undo.length > 40) S.undo.shift(); }
 function undo(){ const s = S.undo.pop(); if (!s){ toast('元に戻す操作はありません'); return; } S.moments = JSON.parse(s); save(); renderList(); }
 try { $('#noAuto').checked = localStorage.getItem('n1va:noAuto') === '1'; } catch(e){}
@@ -1237,7 +1294,7 @@ tl.addEventListener('pointerup', () => scrub = false);
 
 document.addEventListener('keydown', e => {
   const tag = (e.target.tagName || '').toLowerCase(); if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-  if (S.exporting || !$('#exModal').hidden) return;
+  if (S.exporting || !$('#exModal').hidden || !$('#workModal').hidden) return;
   if (e.key === 'Escape'){ S.linkFrom = null; }
   else if (e.key === ' '){ e.preventDefault(); togglePlay(); }
   else if (e.key === 'ArrowLeft'){ e.preventDefault(); step(e.shiftKey ? -1 : -1/FPS); }
@@ -1245,27 +1302,108 @@ document.addEventListener('keydown', e => {
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){ e.preventDefault(); undo(); }
 });
 
-/* ---------- data ---------- */
-$('#copyJson').onclick = () => {
-  const json = JSON.stringify({ moments:S.moments }); const box = $('#jsonBox');
-  const fallback = () => { box.value = json; box.focus(); box.select(); toast('選択したテキストをコピーしてください'); };
-  try { navigator.clipboard.writeText(json).then(() => toast('コピーしました'), fallback); } catch(e){ fallback(); }
+/* ---------- work files ---------- */
+async function saveFile(name, blob){
+  if (window.claude){
+    const dl = downloadsP ? await downloadsP : null;
+    if (!dl){ toast('この画面ではファイルを保存できません', 4500); return false; }
+    try { await dl.save({ filename:name, data:blob }); toast('保存しました'); return true; }
+    catch(e){
+      const code = e && e.code;
+      if (code === 'declined') return false;
+      if (code === 'rate_limited'){ toast('保存の確認が開いています。少し待ってからもう一度押してください'); return false; }
+      if (code === 'too_large'){ toast('ファイルが大きすぎて保存できませんでした', 4500); return false; }
+      toast('保存できませんでした'); return false;
+    }
+  }
+  const file = new File([blob], name, { type:blob.type || 'application/octet-stream' });
+  if (navigator.canShare && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && navigator.canShare({ files:[file] })){
+    try { await navigator.share({ files:[file], title:name }); return true; }
+    catch(e){ if (e && e.name === 'AbortError') return false; }
+  }
+  const url = URL.createObjectURL(blob), el = document.createElement('a');
+  el.href = url; el.download = name; document.body.appendChild(el); el.click(); el.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast('保存しました（ダウンロードを確認してください）'); return true;
+}
+$('#workSave').onclick = () => {
+  if (!S.src){ toast('先に動画を開いてください'); return; }
+  if (!S.moments.length){ toast('まだ保存する場面がありません'); return; }
+  const data = { app:'n1-analysis', v:1, name:S.fileName || '', dur:S.src.dur, saved:new Date().toISOString(), moments:S.moments };
+  const base = (S.fileName || 'video').replace(/\.[^.]+$/, '');
+  saveFile(`${base}_N1work.json`, new Blob([JSON.stringify(data)], { type:'application/json' }));
 };
-$('#importJson').onclick = () => {
-  try { const d = JSON.parse($('#jsonBox').value); const arr = Array.isArray(d) ? d : d.moments;
-    if (!Array.isArray(arr)) throw 0; snapshot(); S.moments = arr.filter(m => typeof m.t === 'number' && Array.isArray(m.shapes)).map(m => ({ id:m.id || uid(), t:m.t, pause:m.pause ?? -1, show:m.show ?? 5, comment:m.comment || '', shapes:m.shapes }));
-    normMoments(S.moments); S.moments.sort((a,b) => a.t - b.t); save(); renderList(); toast(`${S.moments.length}件の場面を読み込みました`);
-  } catch(e){ toast('JSONの形式が正しくありません'); }
-};
+$('#workOpen').onclick = () => $('#workFile').click();
+$('#workFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  let d; try { d = JSON.parse(await f.text()); } catch(err){ toast('作業ファイルを読み込めませんでした'); return; }
+  const arr = Array.isArray(d) ? d : d && d.moments;
+  if (!Array.isArray(arr)){ toast('N1分析の作業ファイルではないようです'); return; }
+  const label = (d && d.name) || f.name;
+  if (!S.src){ S.pendingWork = { moments:arr, label }; toast(`「${label}」の作業を用意しました。続けて元の動画を開いてください`, 4500); $('#file').click(); return; }
+  if (d && d.dur && Math.abs(d.dur - S.src.dur) > 1) toast('動画の長さが作業ファイルと違います。別の動画かもしれません', 4500);
+  setTimeout(() => applyWork(arr, `作業ファイル「${label}」を読み込みました`), d && d.dur && Math.abs(d.dur - S.src.dur) > 1 ? 1200 : 0);
+});
+async function openWorkList(){
+  let all = []; try { all = await IDB.all(); } catch(e){}
+  all = all.filter(r => r.moments && r.moments.length).sort((a,b) => b.updated - a.updated);
+  const box = $('#wlist'); box.innerHTML = '';
+  $('#wmNote').textContent = !all.length ? 'この端末に保存した作業はまだありません。' : S.src ? '今開いている動画に読み込む作業を選んでください。' : '読み込むには、先に動画を開いてください。';
+  for (const r of all){
+    const row = document.createElement('div'); row.className = 'witem';
+    const durTxt = r.dur ? fmt(r.dur).replace(/\.\d+$/, '') : '';
+    row.innerHTML = `<div class="wi-t"><b></b><small>場面${r.moments.length}件・動画 ${durTxt}・${hm(r.updated)} 保存</small></div>${r.key === S.key ? '<span class="cur">今の動画</span>' : ''}<button class="btn" type="button" data-a="load">読み込む</button><button class="btn" type="button" data-a="del">削除</button>`;
+    row.querySelector('b').textContent = r.name || '名前なし';
+    const ld = row.querySelector('[data-a="load"]'); ld.disabled = !S.src || r.key === S.key;
+    ld.onclick = () => { $('#workModal').hidden = true; applyWork(r.moments, `「${r.name || '保存した作業'}」の作業を読み込みました`); };
+    const del = row.querySelector('[data-a="del"]'); let armT;
+    del.onclick = async () => {
+      if (!del.classList.contains('primary')){ del.classList.add('primary'); del.textContent = '本当に削除'; armT = setTimeout(() => { del.classList.remove('primary'); del.textContent = '削除'; }, 2500); return; }
+      clearTimeout(armT); try { await IDB.del(r.key); } catch(e){} try { localStorage.removeItem(r.key); } catch(e){}
+      if (r.key === S.key){ S.moments = []; renderList(); setSaveState('まだ保存する作業はありません'); }
+      openWorkList();
+    };
+    box.appendChild(row);
+  }
+  $('#workModal').hidden = false;
+}
+$('#workList').onclick = openWorkList;
+$('#wmClose').onclick = () => { $('#workModal').hidden = true; };
 
 /* ---------- open video ---------- */
 function resize(){ const r = stage.getBoundingClientRect(), d = Math.min(2, window.devicePixelRatio || 1); ink.width = Math.round(r.width*d); ink.height = Math.round(r.height*d); }
 new ResizeObserver(resize).observe(stage);
 function setSource(src, key, name){
   if (S.src) S.src.pause(); clearHold();
-  S.src = src; S.key = key; S.moments = load(key); S.undo = []; S.enter.clear(); src.rate = +$('#speed').value;
+  S.src = src; S.key = key; S.fileName = name; S.moments = []; S.undo = []; S.enter.clear(); S.open = new Set(); src.rate = +$('#speed').value;
   stage.style.setProperty('--ar', src.aspect()); $('#clip').textContent = name;
+  $('#found').hidden = true; S.loading = true; setSaveState('読み込み中…');
   seek(0); renderList(); resize();
+  loadWork(key);
+}
+async function loadWork(key){
+  let rec = null;
+  try { rec = await IDB.get(key); } catch(e){}
+  if (S.key !== key) return;
+  let arr = rec && Array.isArray(rec.moments) ? rec.moments : legacyLoad(key);
+  if (S.pendingWork){ const pw = S.pendingWork; S.pendingWork = null; S.loading = false; applyWork(pw.moments, `作業ファイル「${pw.label}」を読み込みました`); return; }
+  if (arr && arr.length){
+    S.moments = cleanMoments(arr); S.loading = false; renderList();
+    setSaveState(`自動保存済み ${rec ? hm(rec.updated) : ''}`.trim(), 'ok');
+    toast(`前回の作業（場面${S.moments.length}件）を読み込みました`); return;
+  }
+  S.loading = false; setSaveState('まだ保存する作業はありません');
+  // 同じ長さの動画で保存した作業を探す（名前が変わっていても見つける）
+  let all = []; try { all = await IDB.all(); } catch(e){}
+  if (S.key !== key || S.moments.length) return;
+  const d = S.src.dur, cands = all.filter(r => r.key !== key && r.moments && r.moments.length && Math.abs((r.dur || 0) - d) < 0.6).sort((a,b) => b.updated - a.updated);
+  if (cands.length){
+    const c = cands[0];
+    $('#foundText').textContent = `同じ長さの動画で保存した作業が見つかりました：「${c.name || '名前なし'}」場面${c.moments.length}件（${hm(c.updated)}）`;
+    $('#found').hidden = false;
+    $('#foundLoad').onclick = () => { $('#found').hidden = true; applyWork(c.moments, `「${c.name || '保存した作業'}」の作業を読み込みました`); };
+    $('#foundSkip').onclick = () => { $('#found').hidden = true; };
+  }
 }
 function openFile(f){
   if (!f) return;
@@ -1395,27 +1533,7 @@ function finishExport(cancel){
 }
 async function saveExport(){
   const X = S.exportBlob; if (!X) return;
-  if (!window.claude){
-    const file = new File([X.blob], X.name, { type:X.blob.type });
-    if (navigator.canShare && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && navigator.canShare({ files:[file] })){
-      try { await navigator.share({ files:[file], title:X.name }); return; }
-      catch(e){ if (e && e.name === 'AbortError') return; }
-    }
-    const url = URL.createObjectURL(X.blob), a = document.createElement('a');
-    a.href = url; a.download = X.name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-    toast('保存しました（ダウンロードを確認してください）'); return;
-  }
-  const dl = downloadsP ? await downloadsP : null;
-  if (!dl){ toast('この画面ではファイルを保存できません', 4500); return; }
-  try { await dl.save({ filename:X.name, data:X.blob }); toast('保存しました'); }
-  catch(e){
-    const code = e && e.code;
-    if (code === 'declined') return;
-    if (code === 'rate_limited'){ toast('保存の確認が開いています。少し待ってからもう一度押してください'); return; }
-    if (code === 'too_large'){ toast('ファイルが大きすぎて保存できませんでした。短い動画で試してください', 4500); return; }
-    toast('保存できませんでした');
-  }
+  await saveFile(X.name, X.blob);
 }
 /* ---------- app (PWA) ---------- */
 if ('serviceWorker' in navigator && location.protocol === 'https:'){
