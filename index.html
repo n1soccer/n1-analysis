@@ -335,6 +335,7 @@ details textarea{width:100%;min-height:80px;margin-top:8px;background:var(--bg);
           <button class="btn" id="workSave" type="button">作業をファイルに保存</button>
           <button class="btn" id="workOpen" type="button">作業ファイルを開く</button>
           <button class="btn" id="workList" type="button">保存した作業の一覧</button>
+          <button class="btn" id="workNew" type="button">新しい作業を始める</button>
         </div>
         <input class="vh" type="file" id="workFile" accept=".json,application/json">
         <p class="note">作業はこの端末に自動で保存され、同じ動画を開くと続きから編集できます。別の端末で続けるときや控えを残すときは「作業をファイルに保存」を使ってください。</p>
@@ -1368,6 +1369,21 @@ async function openWorkList(){
   $('#workModal').hidden = false;
 }
 $('#workList').onclick = openWorkList;
+let newArmT;
+$('#workNew').onclick = async () => {
+  const btn = $('#workNew');
+  if (!S.src){ toast('先に動画を開いてください'); return; }
+  if (!S.moments.length){ toast('すでに新しい作業です。描き始めてください'); return; }
+  if (!btn.classList.contains('primary')){
+    btn.classList.add('primary'); btn.textContent = 'もう一度押すと新しく始めます';
+    newArmT = setTimeout(() => { btn.classList.remove('primary'); btn.textContent = '新しい作業を始める'; }, 3000); return;
+  }
+  clearTimeout(newArmT); btn.classList.remove('primary'); btn.textContent = '新しい作業を始める';
+  const now = Date.now(), arc = { ...workRecord(), key:S.key + ':' + now, name:`${S.fileName || '名前なし'}（${hm(now)} までの作業）`, updated:now };
+  try { await IDB.put(arc); } catch(e){ toast('今の作業を残せませんでした。先に「作業をファイルに保存」してください', 4500); return; }
+  S.src.pause(); clearHold(); snapshot(); S.moments = []; S.open = new Set(); S.enter.clear(); save(); renderList();
+  toast('新しい作業を始めました。前の作業は「保存した作業の一覧」に残っています', 4500);
+};
 $('#wmClose').onclick = () => { $('#workModal').hidden = true; };
 
 /* ---------- open video ---------- */
