@@ -1145,30 +1145,50 @@ async function recordVideo(){
   const cv=document.createElement('canvas');
   if(!mime||!cv.captureStream){toast('このブラウザでは動画を作れません。SafariかChromeの新しい版で開いてください',5000);return}
   stopScenes();cancelAnim();select(null);selArrow=null;selZone=null;multi=[];linkStart=null;
-  const vb=svg.viewBox.baseVal,Wd=1080,band=120,bh=Math.round(Wd*vb.height/vb.width/2)*2;
-  cv.width=Wd;cv.height=bh+band;const ctx=cv.getContext('2d');
-  const style=svgStyleText(),bg=getComputedStyle(document.body).backgroundColor,ink=getComputedStyle(document.body).color;
-  const p=curP(),title0=(title||'').trim();
-  let label='';
+  // 1920×1080 の横長動画。縦ピッチは左にボード・右に文字、横ピッチは上に文字・下にボード
+  const vb=svg.viewBox.baseVal,CW=1920,CH=1080,M=48,vert=vb.height>vb.width;
+  cv.width=CW;cv.height=CH;const ctx=cv.getContext('2d');
+  let bx,by,bw,bh,tx,ty,tw;
+  if(vert){bh=CH-M*2;bw=Math.round(bh*vb.width/vb.height);bx=M+40;by=M;tx=bx+bw+80;ty=M+40;tw=CW-tx-M-20}
+  else{bh=CH-150-M;bw=Math.round(bh*vb.width/vb.height);if(bw>CW-M*2){bw=CW-M*2;bh=Math.round(bw*vb.height/vb.width)}bx=Math.round((CW-bw)/2);by=CH-M-bh;tx=bx;ty=M;tw=bw}
+  const style=svgStyleText(),bs=getComputedStyle(document.body),bg=bs.backgroundColor,ink=bs.color;
+  const cs=getComputedStyle(document.documentElement),accent=cs.getPropertyValue('--accent').trim()||'#1d6b4c',muted=cs.getPropertyValue('--muted').trim()||'#5d6a62';
+  const p=curP(),title0=(title||'').trim(),memo=(p&&p.memo||'').trim();
+  const F='"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",system-ui,sans-serif';
+  let label='',sIdx=0;
+  // 日本語は1文字ずつ測って折り返す
+  function wrap(t,w,max){const out=[];for(const para of t.split('\n')){let line='';for(const ch of para){if(ctx.measureText(line+ch).width>w&&line){out.push(line);line=ch}else line+=ch}out.push(line)}
+    if(out.length>max){out.length=max;out[max-1]=out[max-1].replace(/.$/,'…')}return out}
   const img=new Image();let busy=false;
   async function draw(){
     if(busy)return;busy=true;
     try{
-      const c=svg.cloneNode(true);c.setAttribute('width',Wd);c.setAttribute('height',bh);c.setAttribute('xmlns','http://www.w3.org/2000/svg');
+      const c=svg.cloneNode(true);c.setAttribute('width',bw);c.setAttribute('height',bh);c.setAttribute('xmlns','http://www.w3.org/2000/svg');
       const st=document.createElementNS('http://www.w3.org/2000/svg','style');st.textContent=style;c.insertBefore(st,c.firstChild);
-      const url='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(c));
-      img.src=url;await img.decode();
-      ctx.fillStyle=bg;ctx.fillRect(0,0,cv.width,cv.height);
-      ctx.fillStyle=ink;ctx.textBaseline='middle';
-      ctx.font='700 40px "Hiragino Sans","Yu Gothic",system-ui,sans-serif';ctx.fillText(p?p.name:'',36,band/2-14);
-      ctx.font='500 28px "Hiragino Sans","Yu Gothic",system-ui,sans-serif';ctx.globalAlpha=.7;
-      ctx.fillText([title0,label].filter(Boolean).join('　'),36,band/2+28);ctx.globalAlpha=1;
-      ctx.drawImage(img,0,band,Wd,bh);
+      img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(c));await img.decode();
+      ctx.fillStyle=bg;ctx.fillRect(0,0,CW,CH);
+      ctx.drawImage(img,bx,by,bw,bh);
+      ctx.textBaseline='top';
+      if(vert){
+        let y=ty;
+        if(title0){ctx.fillStyle=muted;ctx.font=`500 30px ${F}`;for(const l of wrap(title0,tw,2)){ctx.fillText(l,tx,y);y+=42}y+=10}
+        ctx.fillStyle=ink;ctx.font=`700 64px ${F}`;for(const l of wrap(p?p.name:'',tw,2)){ctx.fillText(l,tx,y);y+=80}
+        y+=24;ctx.fillStyle=accent;ctx.fillRect(tx,y,6,52);
+        ctx.fillStyle=ink;ctx.font=`700 42px ${F}`;ctx.fillText(label,tx+24,y+4);
+        ctx.fillStyle=muted;ctx.font=`500 26px ${F}`;ctx.fillText(`${sIdx+1} / ${scenes.length}`,tx+24,y+56);
+        y+=130;
+        if(memo){ctx.fillStyle=ink;ctx.font=`500 32px ${F}`;for(const l of wrap(memo,tw,Math.floor((CH-M-y)/48))){ctx.fillText(l,tx,y);y+=48}}
+      }else{
+        ctx.fillStyle=ink;ctx.font=`700 52px ${F}`;ctx.fillText(p?p.name:'',tx,ty);
+        const nw=ctx.measureText(p?p.name:'').width;
+        ctx.fillStyle=accent;ctx.font=`700 36px ${F}`;ctx.fillText(label,tx+nw+40,ty+12);
+        ctx.fillStyle=muted;ctx.font=`500 26px ${F}`;ctx.textAlign='right';ctx.fillText([title0,`${sIdx+1} / ${scenes.length}`].filter(Boolean).join('　'),tx+tw,ty+20);ctx.textAlign='left';
+      }
     }catch(e){}
     busy=false;
   }
   const stream=cv.captureStream(30),chunks=[];
-  let mr;try{mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:6e6})}catch(e){toast('動画を作れませんでした');return}
+  let mr;try{mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8e6})}catch(e){toast('動画を作れませんでした');return}
   mr.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
   rec={mr,stop:false,raf:0,timer:0};
   $('recOv').hidden=false;$('recMsg').textContent='動画を作っています…（画面はそのままにしてください）';
@@ -1186,14 +1206,14 @@ async function recordVideo(){
   };
   rec.finish=finish;
   // 1つ目の場面から順に動かしながら録画
-  board=clone(scenes[0].board);activeId=scenes[0].id;label=scenes[0].name;render();renderScenes();
+  board=clone(scenes[0].board);activeId=scenes[0].id;label=scenes[0].name;sIdx=0;render();renderScenes();
   await draw();
   mr.start(250);loop();
   const [mv,hold]=SPEED[set.speed];let i=0;
   const step=()=>{
     if(!rec)return;
     if(i>=scenes.length-1){rec.timer=setTimeout(()=>finish(false),hold+400);return}
-    i++;const s=scenes[i];activeId=s.id;label=s.name;renderScenes();
+    i++;const s=scenes[i];activeId=s.id;label=s.name;sIdx=i;renderScenes();
     animateTo(clone(s.board),mv,()=>{if(rec)rec.timer=setTimeout(step,hold)});
   };
   rec.timer=setTimeout(step,hold);
