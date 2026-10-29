@@ -670,7 +670,7 @@ function render(){
       // 名前は背中側（向いている方向の反対）に
       const brad=((k==='home'?0:180)+(p.r||0))*Math.PI/180,nx=r1(-Math.sin(brad)*2.9),ny=r1(Math.cos(brad)*2.9);
       const lockI=set.lockP.includes(k+':'+i),lx=set.orient==='h'?2.3:-2.3,ly=set.orient==='h'?2.3:-2.3;
-      const hl=isHl(k,i),dim=hlOn&&!hl;
+      const hl=isHl(k,i),dim=false;
       h+=`<g class="pl${isLocked(k,i)?' locked':''}${dim?' dim':''}" data-k="${k}" data-i="${i}" transform="translate(${r1(p.x)} ${r1(p.y)})">
         <circle class="hit" r="3.4"/>${hl?'<circle class="hlglow" r="3.6"/><circle class="hlring" r="3"/>':''}${isSel?'<circle class="ring" r="2.9"/>':''}<g transform="scale(${PS})">${body}
         <text class="${cls}" x="${tx}" y="${ty}" style="fill:${tc}"${up(tx,ty)}>${esc(info.n)}</text></g>
