@@ -1450,14 +1450,28 @@ function pickMime(){
   for (const [m, ext] of list) if (MediaRecorder.isTypeSupported(m)) return { mime:m, ext };
   return null;
 }
+// iPad の Safari は video.captureStream が無いので、Web Audio で動画の音を取り出す
+let AUD = null;
+function audioGraph(){
+  if (AUD) return AUD;
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+  try {
+    const actx = new AC(), src = actx.createMediaElementSource(video), dst = actx.createMediaStreamDestination();
+    src.connect(actx.destination); // ふだんの再生音もそのまま聞こえるように
+    src.connect(dst);
+    AUD = { actx, dst };
+  } catch(e){ AUD = null; }
+  return AUD;
+}
+const canAudio = () => !!(video.captureStream || video.mozCaptureStream || window.AudioContext || window.webkitAudioContext);
 $('#exportBtn').onclick = () => {
   if (!S.src){ toast('先に動画を開いてください'); return; }
   if (!pickMime() || !HTMLCanvasElement.prototype.captureStream){ toast('このブラウザは動画の書き出しに対応していません。パソコンのChromeかSafariで試してください', 4500); return; }
-  $('#exAudioWrap').hidden = !(video.captureStream || video.mozCaptureStream);
+  $('#exAudioWrap').hidden = !canAudio();
   S.src.pause(); clearHold(); $('#exModal').hidden = false;
 };
 $('#exCancel').onclick = () => { $('#exModal').hidden = true; };
-$('#exStart').onclick = startExport;
+$('#exStart').onclick = () => { if ($('#exAudio').checked && !(video.captureStream || video.mozCaptureStream)){ const g = audioGraph(); if (g) g.actx.resume(); } startExport(); };
 $('#exStop').onclick = () => { if (S.exporting) finishExport(true); else { $('#exProg').hidden = true; S.exportBlob = null; } };
 $('#exSave').onclick = saveExport;
 
@@ -1513,7 +1527,14 @@ async function startExport(){
   const cv = document.createElement('canvas'); cv.width = Math.round(vw * sc / 2) * 2; cv.height = Math.round(vh * sc / 2) * 2;
   const stream = cv.captureStream(30);
   if ($('#exAudio').checked && !$('#exAudioWrap').hidden){
-    try { const vs = video.captureStream ? video.captureStream() : video.mozCaptureStream(); vs.getAudioTracks().forEach(t => stream.addTrack(t)); } catch(e){}
+    let ok = false;
+    if (video.captureStream || video.mozCaptureStream){
+      try { const vs = video.captureStream ? video.captureStream() : video.mozCaptureStream(); vs.getAudioTracks().forEach(t => { stream.addTrack(t); ok = true; }); } catch(e){}
+    }
+    if (!ok){
+      const g = audioGraph();
+      if (g){ try { await g.actx.resume(); } catch(e){} g.dst.stream.getAudioTracks().forEach(t => stream.addTrack(t.clone())); }
+    }
   }
   let rec;
   try { rec = new MediaRecorder(stream, { mimeType:mm.mime, videoBitsPerSecond:8000000 }); }
