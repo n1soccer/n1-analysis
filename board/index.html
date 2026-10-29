@@ -112,6 +112,12 @@ button,select,input,textarea{font:inherit;color:inherit}
 .pl .num{font-size:2.4px}
 .pl .num.h{font-size:2.1px}
 .pl .nm{font-size:1.45px;fill:#fff;stroke:rgba(0,0,0,.6);stroke-width:.45;paint-order:stroke;font-family:var(--f-body)}
+.hlglow{fill:var(--pass);opacity:.38;animation:hlp 1.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.hlring{fill:none;stroke:var(--pass);stroke-width:.45}
+.hlstar{fill:var(--pass);stroke:#111;stroke-width:.12}
+.pl.dim{opacity:.38}
+@keyframes hlp{0%,100%{transform:scale(.85);opacity:.45}50%{transform:scale(1.15);opacity:.18}}
+@media (prefers-reduced-motion:reduce){.hlglow{animation:none}}
 .pl .ring{fill:none;stroke:var(--pass);stroke-width:.4;stroke-dasharray:.8 .5}
 .badge{fill:var(--pass);stroke:#000;stroke-width:.15}
 .hit{fill:transparent}
@@ -283,6 +289,7 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
         <div class="chips" id="sceneChips" role="group" aria-label="場面"></div>
         <button class="btn sm" id="addScene" title="今の配置をコピーして、次の場面を作る">＋ 次の場面</button>
         <span class="sb-status" id="sbStatus"></span>
+        <button class="btn sm" id="hlClear" hidden title="この場面の強調をすべて外す"></button>
         <span class="sp"></span>
         <span class="sb-acts" id="sbActs" hidden>
           <button class="btn sm" id="scLeft" title="この場面を1つ前へ" aria-label="前へ移動">←</button>
@@ -296,6 +303,7 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
         <label class="chk" id="rotWrap" for="pRot">向き</label>
         <input id="pRot" type="range" min="-180" max="180" step="15" aria-label="向き">
         <button class="btn sm" id="rotReset">正面</button>
+        <button class="btn sm primary" id="hlBtn">★ 強調</button>
         <button class="btn sm" id="lockOne">この選手をロック</button>
         <button class="btn sm" id="straight" hidden>まっすぐに戻す</button>
         <button class="btn sm danger" id="delArrow" hidden>削除</button>
@@ -437,6 +445,8 @@ const isLight=hex=>{const n=parseInt(hex.slice(1),16);return (.299*(n>>16)+.587*
 
 let set={thirds:true,lanes:true,layout:'half',orient:'v',ov:1,toolCol:{pass:'#f3c623',run:'#ffffff',link:'#ffffff',zone:'#f3c623'},toolOp:{pass:1,run:1,link:1,zone:.35},zoneShape:'rect',lock:{home:false,away:false,ball:false},lockP:[],showAway:true,showShape:false,fmHome:'4-4-2',fmAway:'4-3-3',colHome:'#2350d0',colAway:'#d23636',piece:'human',
   nameHome:'自チーム',nameAway:'相手',speed:'normal'};
+const STAR='M0-10L2.9-4 9.5-3.1 4.7 1.5 5.9 8.1 0 5 -5.9 8.1 -4.7 1.5 -9.5-3.1 -2.9-4Z';
+const isHl=(k,i)=>(board.hl||[]).includes(k+':'+i);
 const isLocked=(k,i)=>k==='ball'?!!set.lock.ball:(!!set.lock[k]||set.lockP.includes(k+':'+i));
 const LINECOLS=[['黄','#f3c623'],['白','#ffffff'],['黒','#16191b'],['赤','#e23b3b'],['青','#2b5be0'],['水色','#3fc0f0'],['オレンジ','#f47a1f'],['ピンク','#ec5fa4'],['緑','#3cc35a'],['紫','#8a5be0']];
 // 曲線は2次ベジェ（cx,cy=制御点）。中央の丸は曲線上の中間点
@@ -660,14 +670,17 @@ function render(){
       // 名前は背中側（向いている方向の反対）に
       const brad=((k==='home'?0:180)+(p.r||0))*Math.PI/180,nx=r1(-Math.sin(brad)*2.9),ny=r1(Math.cos(brad)*2.9);
       const lockI=set.lockP.includes(k+':'+i),lx=set.orient==='h'?2.3:-2.3,ly=set.orient==='h'?2.3:-2.3;
-      h+=`<g class="pl${isLocked(k,i)?' locked':''}" data-k="${k}" data-i="${i}" transform="translate(${r1(p.x)} ${r1(p.y)})">
-        <circle class="hit" r="3.4"/>${isSel?'<circle class="ring" r="2.9"/>':''}<g transform="scale(${PS})">${body}
+      const hl=isHl(k,i),dim=hlOn&&!hl;
+      h+=`<g class="pl${isLocked(k,i)?' locked':''}${dim?' dim':''}" data-k="${k}" data-i="${i}" transform="translate(${r1(p.x)} ${r1(p.y)})">
+        <circle class="hit" r="3.4"/>${hl?'<circle class="hlglow" r="3.6"/><circle class="hlring" r="3"/>':''}${isSel?'<circle class="ring" r="2.9"/>':''}<g transform="scale(${PS})">${body}
         <text class="${cls}" x="${tx}" y="${ty}" style="fill:${tc}"${up(tx,ty)}>${esc(info.n)}</text></g>
         ${info.note?`<circle class="badge" cx="${r1(bx*PS)}" cy="${r1(by*PS)}" r=".5"/>`:''}
         ${lockI?`<g transform="translate(${lx} ${ly}) scale(.09)"><path class="lockmark" d="M4 7V5a4 4 0 0 1 8 0v2" fill="none" style="stroke:var(--ink);stroke-width:2.4"/><rect class="lockmark" x="2" y="7" width="12" height="9" rx="1.5"/></g>`:''}
+        ${hl?`<path class="hlstar" transform="translate(${set.orient==='h'?-2.6:2.6} ${set.orient==='h'?2.6:-2.6}) scale(.11)" d="${STAR}"/>`:''}
         ${info.name?`<text class="nm" x="${nx}" y="${ny}"${up(nx,ny)}>${esc(info.name)}</text>`:''}</g>`;
     });
   };
+  const hlOn=(board.hl||[]).length>0;
   if(set.showAway)pl('away');
   pl('home');
   const b=board.ball;
@@ -693,12 +706,12 @@ function render(){
 }
 
 function pushHist(){hist.push(JSON.stringify(board));if(hist.length>60)hist.shift()}
-function undo(){if(!hist.length)return;selArrow=null;selZone=null;updSelbar();stopScenes();cancelAnim();board=JSON.parse(hist.pop());render();persist()}
+function undo(){if(!hist.length)return;selArrow=null;selZone=null;updSelbar();stopScenes();cancelAnim();board=JSON.parse(hist.pop());setTimeout(updHlClear);render();persist()}
 
 // ---- アニメーション ----
 function lerpBoard(a,b,k){
   const lp=(p,q)=>({x:p.x+(q.x-p.x)*k,y:p.y+(q.y-p.y)*k,r:(p.r||0)+((q.r||0)-(p.r||0))*k});
-  return {home:b.home.map((q,i)=>lp(a.home[i]||q,q)),away:b.away.map((q,i)=>lp(a.away[i]||q,q)),ball:lp(a.ball,b.ball),arrows:[],links:clone(b.links||[]),zones:clone(b.zones||[])};
+  return {home:b.home.map((q,i)=>lp(a.home[i]||q,q)),away:b.away.map((q,i)=>lp(a.away[i]||q,q)),ball:lp(a.ball,b.ball),arrows:[],links:clone(b.links||[]),zones:clone(b.zones||[]),hl:clone(b.hl||[])};
 }
 const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let anim=null,scenePlay=null;
@@ -710,7 +723,7 @@ function animateTo(target,ms,done){
   const step=now=>{
     const k=ms?Math.min(1,(now-t0)/ms):1,e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
     if(k<1){board=lerpBoard(from,target,e);render();anim.id=requestAnimationFrame(step)}
-    else{anim=null;board=clone(target);render();persist();done&&done()}
+    else{anim=null;board=clone(target);render();persist();updHlClear();done&&done()}
   };
   anim.id=requestAnimationFrame(step);
 }
@@ -919,13 +932,13 @@ function updSelbar(){
   $('selbar').hidden=!sel&&!many&&!arw&&!zn;
   $('delArrow').hidden=!arw&&!zn;$('straight').hidden=!arw||arw.cx==null;
   if(zn){
-    for(const id of ['rotWrap','pRot','rotReset','lockOne'])$(id).hidden=true;
+    for(const id of ['rotWrap','pRot','rotReset','lockOne','hlBtn'])$(id).hidden=true;
     $('selDot').hidden=false;$('selDot').style.background=zn.c;
     $('selName').textContent=`スペース（${ZNAME[zn.t]}）`;$('delArrow').textContent='この図形を削除';
     return;
   }
   if(arw){$('delArrow').textContent='この矢印を削除';
-    for(const id of ['rotWrap','pRot','rotReset','lockOne'])$(id).hidden=true;
+    for(const id of ['rotWrap','pRot','rotReset','lockOne','hlBtn'])$(id).hidden=true;
     $('selDot').hidden=false;$('selDot').style.background=arw.c||defCol(arw.kind);
     $('selName').textContent=arw.kind==='pass'?'パスの矢印':'ランの矢印';
     return;
@@ -942,10 +955,21 @@ function updSelbar(){
     $('selName').textContent=`${nameOf(sel.k)} ${info.n?'#'+info.n:''} ${info.name||''}`.trim();
     $('pRot').value=Math.round(p.r||0);
   }
+  const hb=$('hlBtn'),tg=hlTargets();hb.hidden=!tg.length;
+  if(tg.length){const all=tg.every(m=>isHl(m.k,m.i));hb.textContent=all?'強調を外す':'★ 強調';hb.classList.toggle('primary',!all)}
   const lb=$('lockOne');lb.hidden=!sel||many;
   if(sel){const tl=set.lock[sel.k],on=set.lockP.includes(sel.k+':'+sel.i);
     lb.disabled=tl;lb.textContent=tl?'チームごとロック中':on?'ロック解除':'この選手をロック';}
 }
+function hlTargets(){return multi.length>1?multi.filter(m=>m.k!=='ball'):sel?[sel]:[]}
+$('hlClear').onclick=()=>{if(!(board.hl||[]).length)return;pushHist();board.hl=[];updSelbar();render();persist();updHlClear()};
+$('hlBtn').onclick=()=>{
+  const tg=hlTargets();if(!tg.length)return;pushHist();
+  const all=tg.every(m=>isHl(m.k,m.i)),keys=tg.map(m=>m.k+':'+m.i);
+  board.hl=all?(board.hl||[]).filter(x=>!keys.includes(x)):[...new Set([...(board.hl||[]),...keys])];
+  updSelbar();render();persist();updHlClear();
+};
+function updHlClear(){const n=(board.hl||[]).length;$('hlClear').hidden=!n;if(n)$('hlClear').textContent=`★ 強調を全解除（${n}人）`}
 $('lockOne').onclick=()=>{if(!sel)return;const key=sel.k+':'+sel.i;
   set.lockP=set.lockP.includes(key)?set.lockP.filter(x=>x!==key):[...set.lockP,key];updSelbar();render();persist()};
 function renderLocks(){document.querySelectorAll('[data-lock]').forEach(b=>{const on=!!set.lock[b.dataset.lock];b.setAttribute('aria-pressed',on);b.title=on?'タップでロック解除':'タップでロック'})}
@@ -1019,6 +1043,7 @@ let pendingDel=null;
 const isDefName=n=>/^場面\d+$/.test(n||'');
 function renumber(){scenes.forEach((s,i)=>{if(isDefName(s.name))s.name=`場面${i+1}`})}
 function renderScenes(){
+  updHlClear();
   $('playScenes').disabled=scenes.length<2;
   $('playScenes').title=scenes.length<2?'場面を2つ以上作ると再生できます':'場面を順番に動かします';
   const ai=scenes.findIndex(x=>x.id===activeId);
