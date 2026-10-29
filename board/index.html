@@ -85,7 +85,15 @@ button,select,input,textarea{font:inherit;color:inherit}
 
 .board-wrap{position:relative;flex:1;min-height:0;border-radius:10px;overflow:hidden;background:var(--pitch-2)}
 #board{width:100%;height:100%;display:block;touch-action:none;user-select:none;-webkit-user-select:none}
-.selbar{position:absolute;left:10px;bottom:10px;right:10px;max-width:440px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+.scenebar{flex:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.scenebar .sp{flex:1}
+.sb-label{font-size:12px;color:var(--muted);font-weight:700;padding-left:2px}
+.chips{display:flex;gap:4px;overflow-x:auto;max-width:100%;min-width:0}
+.chips button{min-width:34px;height:30px;padding:0 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);font-family:var(--f-display);font-weight:700;font-size:15px;cursor:pointer;flex:none}
+.chips button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.sb-status{font-size:12px;color:var(--muted)}
+.sb-acts{display:flex;gap:4px}
+.selbar{position:absolute;left:10px;bottom:62px;right:10px;max-width:440px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.18)}
 .selbar strong{font-family:var(--f-display);font-size:16px}
 .selbar input[type=range]{flex:1;min-width:100px;accent-color:var(--accent)}
@@ -233,9 +241,6 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
           <button data-lock="away" aria-pressed="false"><i class="dot" data-dot="away"></i><span data-tname="away"></span></button>
           <button data-lock="ball" aria-pressed="false"><i class="dot" style="background:#fff"></i>ボール</button>
         </div>
-        <span class="sp"></span>
-        <button class="btn sm" id="addScene">＋ 場面</button>
-        <button class="btn sm" id="playScenes">▶ 再生</button>
       </div>
 
       <div class="board-wrap" id="boardWrap">
@@ -246,6 +251,19 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
           <g id="world"><g id="pitch"></g><g id="dyn"></g></g>
         </svg>
         <div class="toolhint" id="toolhint" hidden></div>
+      </div>
+      <div class="scenebar" id="scenebar">
+        <span class="sb-label">場面</span>
+        <div class="chips" id="sceneChips" role="group" aria-label="場面"></div>
+        <button class="btn sm" id="addScene" title="今の配置をコピーして、次の場面を作る">＋ 次の場面</button>
+        <span class="sb-status" id="sbStatus"></span>
+        <span class="sp"></span>
+        <span class="sb-acts" id="sbActs" hidden>
+          <button class="btn sm" id="scLeft" title="この場面を1つ前へ" aria-label="前へ移動">←</button>
+          <button class="btn sm" id="scRight" title="この場面を1つ後ろへ" aria-label="後ろへ移動">→</button>
+          <button class="btn sm danger" id="scDel">削除</button>
+        </span>
+        <button class="btn sm primary" id="playScenes">▶ 再生</button>
       </div>
       <div class="selbar" id="selbar" hidden>
         <i class="dot" id="selDot"></i><strong id="selName"></strong>
@@ -282,7 +300,7 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
       </div>
 
       <div class="pane" id="tab-scene" hidden>
-        <p class="hint">ボードで選手を動かして「＋ 場面を追加」を押すと、その配置を1コマとして保存します。2コマ以上で「▶ アニメ再生」すると、場面から場面へ選手が動きます。</p>
+        <p class="hint">ボードの下の「＋ 次の場面」で、今の配置をコピーした新しい場面ができます。そのまま選手を動かせば、その場面に自動で保存されます。番号を押すと場面を行き来でき、「▶ 再生」で順番に動きます。ここでは場面の名前を付けられます。</p>
         <div class="row">
           <label class="chk" for="speed">速さ</label>
           <select id="speed" style="width:auto"><option value="slow">ゆっくり</option><option value="normal" selected>ふつう</option><option value="fast">はやい</option></select>
@@ -484,7 +502,10 @@ let scenes=[],title='';
 let tool='move',sel=null,hist=[],activeId=null,curTeam='away',tab='feat';
 
 // ---- 保存 ----
-function persist(){try{localStorage.setItem(KEY,JSON.stringify({v:2,set,board,roster,notes,scenes,title}))}catch(e){}}
+function persist(){
+  // 選んでいる場面には、ボードの変更が自動で保存される
+  if(activeId&&!scenePlay&&!anim){const sc=scenes.find(x=>x.id===activeId);if(sc)sc.board=clone(board)}
+  try{localStorage.setItem(KEY,JSON.stringify({v:2,set,board,roster,notes,scenes,title}))}catch(e){}}
 function strip(b){for(const k of ['home','away'])b[k]=b[k].map(p=>({x:p.x,y:p.y,r:p.r||0}));return b}
 function applyData(d){
   if(d.v===2){board=d.board;roster=d.roster||roster;notes=d.notes||emptyNotes();scenes=d.scenes||[];title=d.title||''}
@@ -956,38 +977,57 @@ $('title').addEventListener('input',e=>{title=e.target.value;persist()});
 
 // ---- 場面 ----
 let pendingDel=null;
+const isDefName=n=>/^場面\d+$/.test(n||'');
+function renumber(){scenes.forEach((s,i)=>{if(isDefName(s.name))s.name=`場面${i+1}`})}
 function renderScenes(){
   $('playScenes').disabled=scenes.length<2;
-  $('playScenes').title=scenes.length<2?'場面を2つ以上追加すると再生できます':'場面を順番に動かします';
+  $('playScenes').title=scenes.length<2?'場面を2つ以上作ると再生できます':'場面を順番に動かします';
+  const ai=scenes.findIndex(x=>x.id===activeId);
+  $('sceneChips').innerHTML=scenes.map((s,i)=>`<button class="${s.id===activeId?'on':''}" data-id="${s.id}" title="${esc(s.name)}" aria-pressed="${s.id===activeId}">${i+1}</button>`).join('');
+  $('addScene').textContent=scenes.length?'＋ 次の場面':'＋ 場面1として保存';
+  $('sbStatus').textContent=ai>=0?`${scenes[ai].name}を編集中（自動で保存）`:scenes.length?'場面の番号を押すと、その場面を編集できます':'今の配置を場面1にして、動かしながら場面を足していきます';
+  $('sbActs').hidden=ai<0;
+  if(ai>=0){$('scLeft').disabled=ai===0;$('scRight').disabled=ai===scenes.length-1;$('scDel').textContent=pendingDel===activeId?'本当に削除':'削除'}
   const ul=$('sceneList');
   if(!scenes.length){ul.innerHTML='<li class="empty" style="display:block">まだ場面がありません。</li>';return}
   ul.innerHTML=scenes.map((s,i)=>`<li class="${s.id===activeId?'on':''}" data-id="${s.id}">
     <button class="no" data-act="go" title="この場面を表示">${i+1}</button>
     <input class="txt" id="sn-${s.id}" data-act="name" value="${esc(s.name)}" aria-label="場面の名前">
-    <span class="acts"><button class="btn sm" data-act="upd" title="今のボードで上書き">上書き</button>
-    <button class="btn sm danger" data-act="del">${pendingDel===s.id?'本当に削除':'削除'}</button></span></li>`).join('');
+    <span class="acts"><button class="btn sm danger" data-act="del">${pendingDel===s.id?'本当に削除':'削除'}</button></span></li>`).join('');
 }
 function goScene(id){
-  const s=scenes.find(x=>x.id===id);if(!s)return;
-  stopScenes();pushHist();activeId=id;renderScenes();
-  animateTo(clone(s.board),SPEED[set.speed][0]*.7);
+  const s=scenes.find(x=>x.id===id);if(!s||id===activeId&&!anim)return;
+  stopScenes();cancelAnim();selArrow=null;selZone=null;multi=[];select(null);
+  hist=[];activeId=id;renderScenes(); // 「戻す」は場面ごと
+  animateTo(clone(s.board),SPEED[set.speed][0]*.6);
 }
+function delScene(id){
+  if(pendingDel!==id){pendingDel=id;renderScenes();setTimeout(()=>{if(pendingDel===id){pendingDel=null;renderScenes()}},3000);return}
+  const i=scenes.findIndex(x=>x.id===id);scenes.splice(i,1);pendingDel=null;renumber();
+  if(activeId===id){const nb=scenes[Math.min(i,scenes.length-1)];activeId=null;if(nb){activeId=nb.id;animateTo(clone(nb.board),400)}}
+  renderScenes();persist();
+}
+function moveScene(d){
+  const i=scenes.findIndex(x=>x.id===activeId),j=i+d;if(i<0||j<0||j>=scenes.length)return;
+  [scenes[i],scenes[j]]=[scenes[j],scenes[i]];renumber();renderScenes();persist();
+}
+$('sceneChips').addEventListener('click',e=>{const b=e.target.closest('[data-id]');if(b)goScene(b.dataset.id)});
+$('scLeft').onclick=()=>moveScene(-1);$('scRight').onclick=()=>moveScene(1);
+$('scDel').onclick=()=>{if(activeId)delScene(activeId)};
 $('sceneList').addEventListener('click',e=>{
   const b=e.target.closest('[data-act]'),li=e.target.closest('li[data-id]');if(!b||!li||b.dataset.act==='name')return;
-  const id=li.dataset.id,s=scenes.find(x=>x.id===id);
-  if(b.dataset.act==='go')goScene(id);
-  if(b.dataset.act==='upd'){s.board=clone(board);activeId=id;b.textContent='上書きしました';setTimeout(renderScenes,900);persist()}
-  if(b.dataset.act==='del'){
-    if(pendingDel===id){scenes=scenes.filter(x=>x.id!==id);pendingDel=null;if(activeId===id)activeId=null;persist()}
-    else{pendingDel=id;setTimeout(()=>{if(pendingDel===id){pendingDel=null;renderScenes()}},3000)}
-    renderScenes();
-  }
+  if(b.dataset.act==='go')goScene(li.dataset.id);
+  if(b.dataset.act==='del')delScene(li.dataset.id);
 });
-$('sceneList').addEventListener('input',e=>{if(e.target.dataset.act!=='name')return;scenes.find(x=>x.id===e.target.closest('li').dataset.id).name=e.target.value;persist()});
+$('sceneList').addEventListener('input',e=>{if(e.target.dataset.act!=='name')return;scenes.find(x=>x.id===e.target.closest('li').dataset.id).name=e.target.value;persist();renderChipsOnly()});
+function renderChipsOnly(){document.querySelectorAll('#sceneChips [data-id]').forEach(b=>{const s=scenes.find(x=>x.id===b.dataset.id);if(s)b.title=s.name});
+  const s=scenes.find(x=>x.id===activeId);if(s)$('sbStatus').textContent=`${s.name}を編集中（自動で保存）`}
 $('addScene').onclick=()=>{
-  const s={id:'s'+Date.now().toString(36),name:`場面${scenes.length+1}`,board:clone(board)};
-  scenes.push(s);activeId=s.id;renderScenes();persist();
-  const b=$('addScene');b.textContent=`場面${scenes.length} 追加`;setTimeout(()=>b.textContent='＋ 場面',1200);
+  stopScenes();cancelAnim();
+  const i=scenes.findIndex(x=>x.id===activeId);
+  const s={id:'s'+Date.now().toString(36),name:'場面0',board:clone(board)};
+  scenes.splice(i<0?scenes.length:i+1,0,s);renumber();activeId=s.id;renderScenes();persist();
+  const b=$('sceneChips').querySelector(`[data-id="${s.id}"]`);if(b)b.scrollIntoView({block:'nearest',inline:'nearest'});
 };
 function stopScenes(){if(!scenePlay)return;clearTimeout(scenePlay.timer);scenePlay=null;$('playScenes').textContent='▶ 再生'}
 function playScenes(){
