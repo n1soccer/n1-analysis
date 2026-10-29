@@ -85,6 +85,14 @@ button,select,input,textarea{font:inherit;color:inherit}
 
 .board-wrap{position:relative;flex:1;min-height:0;border-radius:10px;overflow:hidden;background:var(--pitch-2)}
 #board{width:100%;height:100%;display:block;touch-action:none;user-select:none;-webkit-user-select:none}
+.patbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:-4px}
+.pats{display:flex;gap:2px;overflow-x:auto;min-width:0;max-width:100%;border-bottom:1px solid var(--line)}
+.pats button{border:0;background:none;padding:6px 12px;font-size:13px;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;white-space:nowrap;color:var(--muted);flex:none}
+.pats button.on{color:var(--ink);font-weight:700;border-bottom-color:var(--accent)}
+.patmenu-wrap{position:relative}
+.patmenu{position:absolute;top:calc(100% + 6px);left:0;z-index:16;width:260px;display:flex;flex-direction:column;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.patmenu label{font-size:12px;color:var(--muted);font-weight:700}
+@media (max-width:600px){.patmenu{left:auto;right:0}}
 .scenebar{flex:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
 .scenebar .sp{flex:1}
 .sb-label{font-size:12px;color:var(--muted);font-weight:700;padding-left:2px}
@@ -215,6 +223,21 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
     <input id="title" type="text" placeholder="タイトル（例：vs 〇〇高校 プリンスリーグ 11/14）" aria-label="タイトル">
     <button id="dataBtn" class="btn">データ保存・読込</button>
   </header>
+  <nav class="patbar" aria-label="パターン">
+    <div class="pats" id="pats"></div>
+    <button class="btn sm" id="addPat" title="新しいパターンを作る（今の選手の配置から始まります）">＋ パターン</button>
+    <div class="patmenu-wrap">
+      <button class="btn sm" id="patMenuBtn" aria-haspopup="true" aria-expanded="false">名前・複製・削除</button>
+      <div class="patmenu" id="patMenu" hidden>
+        <label for="patName">パターン名</label>
+        <input class="txt" id="patName" maxlength="20">
+        <div class="row">
+          <button class="btn sm" id="dupPat">このパターンを複製</button>
+          <button class="btn sm danger" id="delPat">削除</button>
+        </div>
+      </div>
+    </div>
+  </nav>
 
   <main class="grid">
     <section class="left">
@@ -286,7 +309,7 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
 
       <div class="pane" id="tab-feat">
         <div class="field memo">
-          <label for="memo">特徴・ポイント</label>
+          <label for="memo" id="memoLabel">特徴・ポイント</label>
           <textarea id="memo" rows="8" placeholder="このシートで伝えたいことを書く&#10;例：右SHの突破から早めのクロス。CFは背後を狙う"></textarea>
         </div>
         <details class="pdet" id="pdet">
@@ -505,14 +528,22 @@ let tool='move',sel=null,hist=[],activeId=null,curTeam='away',tab='feat';
 function persist(){
   // 選んでいる場面には、ボードの変更が自動で保存される
   if(activeId&&!scenePlay&&!anim){const sc=scenes.find(x=>x.id===activeId);if(sc)sc.board=clone(board)}
-  try{localStorage.setItem(KEY,JSON.stringify({v:2,set,board,roster,notes,scenes,title}))}catch(e){}}
+  syncPat();
+  try{localStorage.setItem(KEY,JSON.stringify(dataObj()))}catch(e){}}
+const dataObj=()=>({app:'n1-formation-board',v:3,set,board,roster,notes,scenes,title,patterns,curPat});
 function strip(b){for(const k of ['home','away'])b[k]=b[k].map(p=>({x:p.x,y:p.y,r:p.r||0}));return b}
 function applyData(d){
-  if(d.v===2){board=d.board;roster=d.roster||roster;notes=d.notes||emptyNotes();scenes=d.scenes||[];title=d.title||''}
+  if(d.v>=2){board=d.board;roster=d.roster||roster;notes=d.notes||emptyNotes();scenes=d.scenes||[];title=d.title||''}
   else{ // 旧形式（映像付き版）から移行
     for(const k of ['home','away'])roster[k]=d.board[k].map(p=>({n:String(p.n??''),name:p.name||'',note:''}));
     board=strip(clone(d.board));
     scenes=(d.snaps||[]).map((s,i)=>({id:s.id,name:s.note||`場面${i+1}`,board:strip(clone(s.board))}));
+  }
+  // パターン（場面のセット）。古いデータは1つ目のパターンにする
+  patterns=[];curPat=null;
+  if(Array.isArray(d.patterns)&&d.patterns.length){
+    patterns=d.patterns;const p=patterns.find(x=>x.id===d.curPat)||patterns[0];curPat=p.id;
+    scenes=p.scenes||(p.scenes=[]);board=p.board||board;notes.memo=p.memo||'';
   }
   Object.assign(set,d.set||{});
   if(!set.ov){set.orient='v';set.ov=1}
@@ -526,7 +557,12 @@ function applyData(d){
     notes.memo=parts.join('\n');
   }
 }
+let patterns=[],curPat=null;
+const curP=()=>patterns.find(p=>p.id===curPat);
+function syncPat(){const p=curP();if(p){p.scenes=scenes;p.board=board;p.memo=notes.memo||''}}
+function ensurePats(){if(!patterns.length){const p={id:'p'+Date.now().toString(36),name:'パターン1',scenes,board,memo:notes.memo||''};patterns=[p];curPat=p.id}}
 try{const d=JSON.parse(localStorage.getItem(KEY)||'null');if(d&&d.board)applyData(d)}catch(e){}
+ensurePats();
 
 // ---- ピッチ ----
 function drawPitch(){
@@ -1097,14 +1133,14 @@ document.addEventListener('keydown',e=>{
 
 // ---- データ ----
 const msg=t=>{$('dataMsg').textContent=t;setTimeout(()=>$('dataMsg').textContent='',2500)};
-$('dataBtn').onclick=()=>{$('dataText').value=JSON.stringify({app:'n1-formation-board',v:2,set,board,roster,notes,scenes,title});$('dataPanel').hidden=false};
+$('dataBtn').onclick=()=>{syncPat();$('dataText').value=JSON.stringify(dataObj());$('dataPanel').hidden=false};
 $('closeData').onclick=()=>$('dataPanel').hidden=true;
 $('dataPanel').addEventListener('click',e=>{if(e.target.id==='dataPanel')$('dataPanel').hidden=true});
 $('copyData').onclick=()=>{const ta=$('dataText');
   navigator.clipboard.writeText(ta.value).then(()=>msg('コピーしました')).catch(()=>{ta.focus();ta.select();msg('選択しました。コピーしてください')})};
 function importText(txt){
   try{const d=JSON.parse(txt);if(!d.board)throw 0;
-    stopScenes();cancelAnim();applyData(d);sel=null;activeId=null;hist=[];
+    stopScenes();cancelAnim();applyData(d);ensurePats();renderPats();sel=null;activeId=null;hist=[];
     $('title').value=title;$('memo').value=notes.memo||'';$('speed').value=set.speed;applyOrient();renderConf();renderFeat();renderScenes();renderLocks();select(null);persist();
     msg('読み込みました');
   }catch(e){msg('読み込めませんでした。このボードで出力したデータを貼り付けてください')}
@@ -1112,6 +1148,49 @@ function importText(txt){
 $('loadData').onclick=()=>importText($('dataText').value);
 $('jsonIn').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('dataText').value=r.result;importText(r.result)};r.readAsText(f)};
 
+// ---- パターン ----
+let pendingPatDel=false;
+function renderPats(){
+  const p=curP();
+  $('pats').innerHTML=patterns.map(x=>`<button class="${x.id===curPat?'on':''}" data-pid="${x.id}" aria-pressed="${x.id===curPat}">${esc(x.name)}</button>`).join('');
+  $('patName').value=p?p.name:'';
+  $('delPat').disabled=patterns.length<2;$('delPat').textContent=pendingPatDel?'本当に削除':'削除';
+  $('memoLabel').textContent=p?`${p.name}の特徴・ポイント`:'特徴・ポイント';
+  const b=$('pats').querySelector('.on');if(b)b.scrollIntoView({block:'nearest',inline:'nearest'});
+}
+function loadPat(id,force){
+  if(id===curPat&&!force)return;
+  stopScenes();cancelAnim();syncPat();curPat=id;const p=curP();
+  scenes=p.scenes||(p.scenes=[]);board=clone(p.board);notes.memo=p.memo||'';
+  activeId=null;hist=[];selArrow=null;selZone=null;multi=[];linkStart=null;pendingPatDel=false;
+  $('memo').value=notes.memo;select(null);renderScenes();renderPats();updTools();persist();autosizeAll();
+}
+function nextPatName(){let n=patterns.length+1;while(patterns.some(x=>x.name===`パターン${n}`))n++;return `パターン${n}`}
+$('pats').addEventListener('click',e=>{const b=e.target.closest('[data-pid]');if(b)loadPat(b.dataset.pid)});
+$('addPat').onclick=()=>{
+  syncPat();
+  const b=clone(board);b.arrows=[];b.links=[];b.zones=[];
+  const p={id:'p'+Date.now().toString(36),name:nextPatName(),scenes:[],board:b,memo:''};
+  patterns.push(p);loadPat(p.id);
+};
+$('patMenuBtn').onclick=()=>{const o=$('patMenu').hidden;$('patMenu').hidden=!o;$('patMenuBtn').setAttribute('aria-expanded',o);pendingPatDel=false;renderPats()};
+document.addEventListener('pointerdown',e=>{if(!$('patMenu').hidden&&!e.target.closest('.patmenu-wrap'))$('patMenu').hidden=true});
+$('patName').addEventListener('input',e=>{const p=curP();if(!p)return;p.name=e.target.value||'パターン';
+  document.querySelector('#pats .on').textContent=p.name;$('memoLabel').textContent=`${p.name}の特徴・ポイント`;persist()});
+$('dupPat').onclick=()=>{
+  syncPat();const src=curP(),t=Date.now().toString(36);
+  const p={id:'p'+t,name:`${src.name}のコピー`,board:clone(board),memo:src.memo||'',
+    scenes:src.scenes.map((s,i)=>({...clone(s),id:'s'+t+i}))};
+  patterns.splice(patterns.indexOf(src)+1,0,p);$('patMenu').hidden=true;loadPat(p.id);
+};
+$('delPat').onclick=()=>{
+  if(patterns.length<2)return;
+  if(!pendingPatDel){pendingPatDel=true;renderPats();setTimeout(()=>{pendingPatDel=false;renderPats()},3000);return}
+  const i=patterns.findIndex(x=>x.id===curPat);patterns.splice(i,1);curPat=null;
+  $('patMenu').hidden=true;const nb=patterns[Math.min(i,patterns.length-1)];
+  loadPat(nb.id,true);
+};
+renderPats();
 applyOrient();renderConf();renderFeat();renderScenes();renderLocks();updTools();render();
 window.addEventListener('resize',()=>{if(tab==='feat')autosizeAll()});
 })();
