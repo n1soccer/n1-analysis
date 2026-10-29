@@ -95,6 +95,12 @@ button,select,input,textarea{font:inherit;color:inherit}
 .patmenu{position:absolute;top:calc(100% + 6px);left:0;z-index:16;width:260px;display:flex;flex-direction:column;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .patmenu label{font-size:12px;color:var(--muted);font-weight:700}
 @media (max-width:600px){.patmenu{left:auto;right:0}}
+.recov{position:fixed;inset:0;z-index:30;display:flex;align-items:flex-end;justify-content:center;pointer-events:auto;
+  padding:0 max(16px,env(safe-area-inset-right,0px)) max(24px,calc(env(safe-area-inset-bottom,0px) + 16px)) max(16px,env(safe-area-inset-left,0px))}
+.recov .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:14px}
+.recdot{width:12px;height:12px;border-radius:50%;background:#d23636;animation:recb 1s infinite}
+@keyframes recb{50%{opacity:.25}}
+.toast{position:fixed;left:50%;bottom:max(24px,calc(env(safe-area-inset-bottom,0px) + 16px));transform:translateX(-50%);z-index:40;background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;max-width:calc(100% - 32px);text-align:center}
 .scenebar{flex:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
 .scenebar .sp{flex:1}
 .sb-label{font-size:12px;color:var(--muted);font-weight:700;padding-left:2px}
@@ -290,6 +296,7 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
           <button class="btn sm danger" id="scDel">削除</button>
         </span>
         <button class="btn sm primary" id="playScenes">▶ 再生</button>
+        <button class="btn sm" id="recBtn" title="場面のアニメーションを動画ファイルにする">動画で保存</button>
       </div>
       <div class="selbar" id="selbar" hidden>
         <i class="dot" id="selDot"></i><strong id="selName"></strong>
@@ -389,6 +396,8 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
   </main>
 </div>
 
+<div class="recov" id="recOv" hidden><div class="card"><i class="recdot"></i><span id="recMsg">動画を作っています…</span><button class="btn sm" id="recStop">中止</button></div></div>
+<div class="toast" id="toast" hidden></div>
 <div class="data" id="dataPanel" hidden>
   <div class="box">
     <h2 style="font-size:15px">データ保存・読込</h2>
@@ -1035,6 +1044,7 @@ let pendingDel=null;
 const isDefName=n=>/^場面\d+$/.test(n||'');
 function renumber(){scenes.forEach((s,i)=>{if(isDefName(s.name))s.name=`場面${i+1}`})}
 function renderScenes(){
+  if($('recBtn'))$('recBtn').disabled=scenes.length<2;
   updHlClear();
   $('playScenes').disabled=scenes.length<2;
   $('playScenes').title=scenes.length<2?'場面を2つ以上作ると再生できます':'場面を順番に動かします';
@@ -1101,6 +1111,95 @@ function playScenes(){
   next();
 }
 $('playScenes').onclick=playScenes;
+
+// ---- 動画で保存 ----
+let toastT=0;
+function toast(t,ms){const e=$('toast');e.textContent=t;e.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>e.hidden=true,ms||3000)}
+function pickMime(){
+  const c=['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+  return c.find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m))||'';
+}
+// ボードのSVGを、色や線の見た目ごと1枚の画像にできる形にする
+function svgStyleText(){
+  const css=[...document.querySelectorAll('style')].map(x=>x.textContent).join('\n');
+  const cs=getComputedStyle(document.documentElement),names=[...new Set(css.match(/--[\w-]+/g)||[])];
+  return css+'\nsvg{'+names.map(n=>`${n}:${cs.getPropertyValue(n)}`).join(';')+'}\n.hlglow{animation:none!important}';
+}
+async function saveFile(name,blob){
+  const file=new File([blob],name,{type:blob.type});
+  if(navigator.canShare&&/iPhone|iPad|iPod|Android|Macintosh/i.test(navigator.userAgent)&&'ontouchend' in document&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],title:name});return true}catch(e){if(e&&e.name==='AbortError')return false}
+  }
+  try{
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+    toast(window.claude?'この画面では保存できないことがあります。ウェブのアプリ（N1ボード）で保存してください':'保存しました（ダウンロードを確認してください）',5000);return true;
+  }catch(e){toast('保存できませんでした');return false}
+}
+let rec=null;
+async function recordVideo(){
+  if(rec)return;
+  if(scenes.length<2){toast('場面を2つ以上作ると動画にできます');return}
+  const mime=pickMime();
+  const cv=document.createElement('canvas');
+  if(!mime||!cv.captureStream){toast('このブラウザでは動画を作れません。SafariかChromeの新しい版で開いてください',5000);return}
+  stopScenes();cancelAnim();select(null);selArrow=null;selZone=null;multi=[];linkStart=null;
+  const vb=svg.viewBox.baseVal,Wd=1080,band=120,bh=Math.round(Wd*vb.height/vb.width/2)*2;
+  cv.width=Wd;cv.height=bh+band;const ctx=cv.getContext('2d');
+  const style=svgStyleText(),bg=getComputedStyle(document.body).backgroundColor,ink=getComputedStyle(document.body).color;
+  const p=curP(),title0=(title||'').trim();
+  let label='';
+  const img=new Image();let busy=false;
+  async function draw(){
+    if(busy)return;busy=true;
+    try{
+      const c=svg.cloneNode(true);c.setAttribute('width',Wd);c.setAttribute('height',bh);c.setAttribute('xmlns','http://www.w3.org/2000/svg');
+      const st=document.createElementNS('http://www.w3.org/2000/svg','style');st.textContent=style;c.insertBefore(st,c.firstChild);
+      const url='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(c));
+      img.src=url;await img.decode();
+      ctx.fillStyle=bg;ctx.fillRect(0,0,cv.width,cv.height);
+      ctx.fillStyle=ink;ctx.textBaseline='middle';
+      ctx.font='700 40px "Hiragino Sans","Yu Gothic",system-ui,sans-serif';ctx.fillText(p?p.name:'',36,band/2-14);
+      ctx.font='500 28px "Hiragino Sans","Yu Gothic",system-ui,sans-serif';ctx.globalAlpha=.7;
+      ctx.fillText([title0,label].filter(Boolean).join('　'),36,band/2+28);ctx.globalAlpha=1;
+      ctx.drawImage(img,0,band,Wd,bh);
+    }catch(e){}
+    busy=false;
+  }
+  const stream=cv.captureStream(30),chunks=[];
+  let mr;try{mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:6e6})}catch(e){toast('動画を作れませんでした');return}
+  mr.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+  rec={mr,stop:false,raf:0,timer:0};
+  $('recOv').hidden=false;$('recMsg').textContent='動画を作っています…（画面はそのままにしてください）';
+  const loop=()=>{if(!rec)return;draw();rec.raf=requestAnimationFrame(loop)};
+  const finish=async cancel=>{
+    if(!rec)return;const r=rec;rec=null;cancelAnimationFrame(r.raf);clearTimeout(r.timer);cancelAnim();
+    await new Promise(res=>{r.mr.onstop=res;try{r.mr.stop()}catch(e){res()}});
+    stream.getTracks().forEach(t=>t.stop());
+    $('recOv').hidden=true;renderScenes();
+    if(cancel){toast('動画づくりを中止しました');return}
+    const type=mime.split(';')[0],ext=type==='video/mp4'?'mp4':'webm';
+    const blob=new Blob(chunks,{type});
+    const d=new Date(),pad=n=>String(n).padStart(2,'0');
+    await saveFile(`n1-board-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.${ext}`,blob);
+  };
+  rec.finish=finish;
+  // 1つ目の場面から順に動かしながら録画
+  board=clone(scenes[0].board);activeId=scenes[0].id;label=scenes[0].name;render();renderScenes();
+  await draw();
+  mr.start(250);loop();
+  const [mv,hold]=SPEED[set.speed];let i=0;
+  const step=()=>{
+    if(!rec)return;
+    if(i>=scenes.length-1){rec.timer=setTimeout(()=>finish(false),hold+400);return}
+    i++;const s=scenes[i];activeId=s.id;label=s.name;renderScenes();
+    animateTo(clone(s.board),mv,()=>{if(rec)rec.timer=setTimeout(step,hold)});
+  };
+  rec.timer=setTimeout(step,hold);
+}
+$('recBtn').onclick=recordVideo;
+$('recStop').onclick=()=>{if(rec)rec.finish(true)};
 $('speed').value=set.speed;$('speed').onchange=e=>{set.speed=e.target.value;persist()};
 
 // ---- チーム設定 ----
