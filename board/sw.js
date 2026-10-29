@@ -1,6 +1,6 @@
 // N1 フォーメーションボード service worker
 // アプリを更新したら VERSION の数字を上げる
-const VERSION = 'n1-board-v3';
+const VERSION = 'n1-board-v4';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

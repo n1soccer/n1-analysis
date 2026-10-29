@@ -86,9 +86,10 @@ button,select,input,textarea{font:inherit;color:inherit}
 .board-wrap{position:relative;flex:1;min-height:0;border-radius:10px;overflow:hidden;background:var(--pitch-2)}
 #board{width:100%;height:100%;display:block;touch-action:none;user-select:none;-webkit-user-select:none}
 .patbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:-4px}
-.pats{display:flex;gap:2px;overflow-x:auto;min-width:0;max-width:100%;border-bottom:1px solid var(--line)}
-.pats button{border:0;background:none;padding:6px 12px;font-size:13px;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;white-space:nowrap;color:var(--muted);flex:none}
-.pats button.on{color:var(--ink);font-weight:700;border-bottom-color:var(--accent)}
+.pats{display:flex;gap:6px;overflow-x:auto;min-width:0;max-width:100%;padding:2px}
+.pats button{border:1px solid var(--line);background:var(--surface);padding:6px 14px;font-size:13px;border-radius:999px;cursor:pointer;white-space:nowrap;color:var(--ink);flex:none}
+.pats button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+.patsel{max-width:160px;width:auto;font-weight:700}
 .patmenu-wrap{position:relative}
 .patmenu{position:absolute;top:calc(100% + 6px);left:0;z-index:16;width:260px;display:flex;flex-direction:column;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .patmenu label{font-size:12px;color:var(--muted);font-weight:700}
@@ -224,7 +225,8 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
     <button id="dataBtn" class="btn">データ保存・読込</button>
   </header>
   <nav class="patbar" aria-label="パターン">
-    <div class="pats" id="pats"></div>
+    <span class="sb-label">パターン</span>
+    <div class="pats" id="pats" role="group" aria-label="パターンを選ぶ"></div>
     <button class="btn sm" id="addPat" title="新しいパターンを作る（今の選手の配置から始まります）">＋ パターン</button>
     <div class="patmenu-wrap">
       <button class="btn sm" id="patMenuBtn" aria-haspopup="true" aria-expanded="false">名前・複製・削除</button>
@@ -276,6 +278,7 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
         <div class="toolhint" id="toolhint" hidden></div>
       </div>
       <div class="scenebar" id="scenebar">
+        <select class="patsel" id="patSel" aria-label="パターンを選ぶ"></select>
         <span class="sb-label">場面</span>
         <div class="chips" id="sceneChips" role="group" aria-label="場面"></div>
         <button class="btn sm" id="addScene" title="今の配置をコピーして、次の場面を作る">＋ 次の場面</button>
@@ -1152,6 +1155,7 @@ $('jsonIn').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new File
 let pendingPatDel=false;
 function renderPats(){
   const p=curP();
+  $('patSel').innerHTML=patterns.map(x=>`<option value="${x.id}"${x.id===curPat?' selected':''}>${esc(x.name)}</option>`).join('')+'<option value="__new">＋ 新しいパターン</option>';
   $('pats').innerHTML=patterns.map(x=>`<button class="${x.id===curPat?'on':''}" data-pid="${x.id}" aria-pressed="${x.id===curPat}">${esc(x.name)}</button>`).join('');
   $('patName').value=p?p.name:'';
   $('delPat').disabled=patterns.length<2;$('delPat').textContent=pendingPatDel?'本当に削除':'削除';
@@ -1166,6 +1170,7 @@ function loadPat(id,force){
   $('memo').value=notes.memo;select(null);renderScenes();renderPats();updTools();persist();autosizeAll();
 }
 function nextPatName(){let n=patterns.length+1;while(patterns.some(x=>x.name===`パターン${n}`))n++;return `パターン${n}`}
+$('patSel').addEventListener('change',e=>{const v=e.target.value;if(v==='__new')$('addPat').click();else loadPat(v)});
 $('pats').addEventListener('click',e=>{const b=e.target.closest('[data-pid]');if(b)loadPat(b.dataset.pid)});
 $('addPat').onclick=()=>{
   syncPat();
@@ -1176,7 +1181,7 @@ $('addPat').onclick=()=>{
 $('patMenuBtn').onclick=()=>{const o=$('patMenu').hidden;$('patMenu').hidden=!o;$('patMenuBtn').setAttribute('aria-expanded',o);pendingPatDel=false;renderPats()};
 document.addEventListener('pointerdown',e=>{if(!$('patMenu').hidden&&!e.target.closest('.patmenu-wrap'))$('patMenu').hidden=true});
 $('patName').addEventListener('input',e=>{const p=curP();if(!p)return;p.name=e.target.value||'パターン';
-  document.querySelector('#pats .on').textContent=p.name;$('memoLabel').textContent=`${p.name}の特徴・ポイント`;persist()});
+  document.querySelector('#pats .on').textContent=p.name;const o=$('patSel').querySelector(`option[value="${p.id}"]`);if(o)o.textContent=p.name;$('memoLabel').textContent=`${p.name}の特徴・ポイント`;persist()});
 $('dupPat').onclick=()=>{
   syncPat();const src=curP(),t=Date.now().toString(36);
   const p={id:'p'+t,name:`${src.name}のコピー`,board:clone(board),memo:src.memo||'',
