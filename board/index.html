@@ -125,6 +125,10 @@ button,select,input,textarea{font:inherit;color:inherit}
 .pl.dim{opacity:.38}
 @keyframes hlp{0%,100%{transform:scale(.85);opacity:.45}50%{transform:scale(1.15);opacity:.18}}
 @media (prefers-reduced-motion:reduce){.hlglow{animation:none}}
+.zglow{fill:none;stroke-width:1.6;stroke-linejoin:round;opacity:.35;animation:zp 1.6s ease-in-out infinite;pointer-events:none}
+.zedge{fill:none;stroke-width:.6;stroke-linejoin:round;pointer-events:none}
+@keyframes zp{0%,100%{opacity:.45;stroke-width:1.2}50%{opacity:.12;stroke-width:2.4}}
+@media (prefers-reduced-motion:reduce){.zglow{animation:none}}
 .pl .ring{fill:none;stroke:var(--pass);stroke-width:.4;stroke-dasharray:.8 .5}
 .badge{fill:var(--pass);stroke:#000;stroke-width:.15}
 .hit{fill:transparent}
@@ -480,7 +484,10 @@ function makeZone(b){
 function zoneSvg(z,n,extra){
   const st=`fill:${z.c};fill-opacity:${z.o};stroke:${z.c};stroke-opacity:${Math.min(1,z.o+.45)}`,
     at=`class="zone${tool==='move'?' ed':''}${n===selZone?' selZ':''}"${n!=null&&tool==='move'?` data-zone="${n}"`:''} style="${st}"`;
-  return z.t==='ell'?`<ellipse ${at} cx="${z.cx}" cy="${z.cy}" rx="${z.rx}" ry="${z.ry}"/>`:`<polygon ${at} points="${z.pts.map(q=>q.x+','+q.y).join(' ')}"/>`;
+  const geo=z.t==='ell'?`cx="${z.cx}" cy="${z.cy}" rx="${z.rx}" ry="${z.ry}"`:`points="${z.pts.map(q=>q.x+','+q.y).join(' ')}"`,tag=z.t==='ell'?'ellipse':'polygon';
+  // 強調した図形：太い縁取りが脈打つ
+  const glow=z.hl?`<${tag} class="zglow" ${geo} style="stroke:${z.c}"/><${tag} class="zedge" ${geo} style="stroke:${z.c}"/>`:'';
+  return glow+`<${tag} ${at} ${geo}/>`;
 }
 const ZNAME={rect:'四角',tri:'三角',ell:'円'};
 const defCol=kind=>kind==='pass'?'#f3c623':'#ffffff';
@@ -944,7 +951,8 @@ function updSelbar(){
   $('selbar').hidden=!sel&&!many&&!arw&&!zn;
   $('delArrow').hidden=!arw&&!zn;$('straight').hidden=!arw||arw.cx==null;
   if(zn){
-    for(const id of ['rotWrap','pRot','rotReset','lockOne','hlBtn'])$(id).hidden=true;
+    for(const id of ['rotWrap','pRot','rotReset','lockOne'])$(id).hidden=true;
+    const hb=$('hlBtn');hb.hidden=false;hb.textContent=zn.hl?'強調を外す':'強調';hb.classList.toggle('primary',!zn.hl);
     $('selDot').hidden=false;$('selDot').style.background=zn.c;
     $('selName').textContent=`スペース（${ZNAME[zn.t]}）`;$('delArrow').textContent='この図形を削除';
     return;
@@ -974,14 +982,17 @@ function updSelbar(){
     lb.disabled=tl;lb.textContent=tl?'チームごとロック中':on?'ロック解除':'この選手をロック';}
 }
 function hlTargets(){return multi.length>1?multi.filter(m=>m.k!=='ball'):sel?[sel]:[]}
-$('hlClear').onclick=()=>{if(!(board.hl||[]).length)return;pushHist();board.hl=[];updSelbar();render();persist();updHlClear()};
+$('hlClear').onclick=()=>{if(!(board.hl||[]).length&&!(board.zones||[]).some(z=>z.hl))return;pushHist();board.hl=[];(board.zones||[]).forEach(z=>delete z.hl);updSelbar();render();persist();updHlClear()};
 $('hlBtn').onclick=()=>{
+  const zn=selZone!=null&&(board.zones||[])[selZone];
+  if(zn){pushHist();zn.hl=!zn.hl;updSelbar();render();persist();updHlClear();return}
   const tg=hlTargets();if(!tg.length)return;pushHist();
   const all=tg.every(m=>isHl(m.k,m.i)),keys=tg.map(m=>m.k+':'+m.i);
   board.hl=all?(board.hl||[]).filter(x=>!keys.includes(x)):[...new Set([...(board.hl||[]),...keys])];
   updSelbar();render();persist();updHlClear();
 };
-function updHlClear(){const n=(board.hl||[]).length;$('hlClear').hidden=!n;if(n)$('hlClear').textContent=`強調を全解除（${n}人）`}
+function updHlClear(){const a=(board.hl||[]).length,z=(board.zones||[]).filter(x=>x.hl).length,n=a+z;$('hlClear').hidden=!n;
+  if(n)$('hlClear').textContent=`強調を全解除（${[a?a+'人':'',z?'図形'+z:''].filter(Boolean).join('・')}）`}
 $('lockOne').onclick=()=>{if(!sel)return;const key=sel.k+':'+sel.i;
   set.lockP=set.lockP.includes(key)?set.lockP.filter(x=>x!==key):[...set.lockP,key];updSelbar();render();persist()};
 function renderLocks(){document.querySelectorAll('[data-lock]').forEach(b=>{const on=!!set.lock[b.dataset.lock];b.setAttribute('aria-pressed',on);b.title=on?'タップでロック解除':'タップでロック'})}
@@ -1134,7 +1145,7 @@ function pickMime(){
 function svgStyleText(){
   const css=[...document.querySelectorAll('style')].map(x=>x.textContent).join('\n');
   const cs=getComputedStyle(document.documentElement),names=[...new Set(css.match(/--[\w-]+/g)||[])];
-  return css+'\nsvg{'+names.map(n=>`${n}:${cs.getPropertyValue(n)}`).join(';')+'}\n.hlglow{animation:none!important}';
+  return css+'\nsvg{'+names.map(n=>`${n}:${cs.getPropertyValue(n)}`).join(';')+'}\n.hlglow,.zglow{animation:none!important}';
 }
 async function saveFile(name,blob){
   const file=new File([blob],name,{type:blob.type});
