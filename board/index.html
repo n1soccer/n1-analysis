@@ -101,6 +101,8 @@ button,select,input,textarea{font:inherit;color:inherit}
 .recdot{width:12px;height:12px;border-radius:50%;background:#d23636;animation:recb 1s infinite}
 @keyframes recb{50%{opacity:.25}}
 .toast{position:fixed;left:50%;bottom:max(24px,calc(env(safe-area-inset-bottom,0px) + 16px));transform:translateX(-50%);z-index:40;background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;max-width:calc(100% - 32px);text-align:center}
+.audbox{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.audname{font-size:13px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
 .scenebar{flex:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
 .scenebar .sp{flex:1}
 .sb-label{font-size:12px;color:var(--muted);font-weight:700;padding-left:2px}
@@ -410,6 +412,19 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
     <h2 style="font-size:15px">動画の名前</h2>
     <input class="txt" id="vidName" maxlength="40" aria-label="動画の名前" style="font-size:16px;padding:9px 10px">
     <p>この名前で保存されます。場面1から順に再生しながら動画を作ります。</p>
+    <div class="audbox">
+      <div class="row">
+        <label class="btn sm" for="audFile">音を付ける動画・音楽を選ぶ</label>
+        <input type="file" id="audFile" accept="video/*,audio/*" class="vh">
+        <span class="audname" id="audName">音なし</span>
+        <button type="button" class="btn sm" id="audClear" hidden>外す</button>
+      </div>
+      <div class="row" id="audStartRow" hidden>
+        <label class="chk" for="audStart">何秒目の音から使う</label>
+        <input class="txt" id="audStart" type="number" min="0" step="1" value="0" inputmode="numeric" style="width:90px">
+        <span class="chk">秒</span>
+      </div>
+    </div>
     <div class="row" style="justify-content:flex-end">
       <button type="button" class="btn" id="nameCancel">やめる</button>
       <button type="submit" class="btn primary">動画を作る</button>
@@ -1203,7 +1218,7 @@ async function saveFile(name,blob){
   }catch(e){toast('保存できませんでした');return false}
 }
 let rec=null;
-async function recordVideo(vidName){
+async function recordVideo(vidName,aud){
   if(rec)return;
   if(scenes.length<2){toast('場面を2つ以上作ると動画にできます');return}
   const mime=pickMime();
@@ -1236,9 +1251,11 @@ async function recordVideo(vidName){
   // 編集アプリやSNSで読み込めるように、無音の音声トラックを付ける
   let actx=null;
   try{
-    const AC=window.AudioContext||window.webkitAudioContext;actx=new AC();await actx.resume();
+    const AC=window.AudioContext||window.webkitAudioContext;actx=aud&&aud.actx||new AC();await actx.resume();
     const osc=actx.createOscillator(),g=actx.createGain(),dst=actx.createMediaStreamDestination();
     g.gain.value=0;osc.connect(g).connect(dst);osc.start();
+    // 選んだ動画・音楽の音を重ねる（スピーカーには出さず、動画にだけ入れる）
+    if(aud&&aud.el){try{actx.createMediaElementSource(aud.el).connect(dst)}catch(e){}}
     dst.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
   }catch(e){actx=null}
   let mr;
@@ -1254,6 +1271,7 @@ async function recordVideo(vidName){
   const finish=async cancel=>{
     if(!rec)return;const r=rec;rec=null;cancelAnimationFrame(r.raf);clearTimeout(r.timer);cancelAnim();
     await new Promise(res=>{r.mr.onstop=res;try{r.mr.stop()}catch(e){res()}});
+    if(aud&&aud.el){try{aud.el.pause()}catch(e){}URL.revokeObjectURL(aud.el.src)}
     stream.getTracks().forEach(t=>t.stop());if(actx)try{actx.close()}catch(e){}
     set.orient=prevOrient;applyOrient();render();persist();
     $('recOv').hidden=true;renderScenes();
@@ -1268,7 +1286,11 @@ async function recordVideo(vidName){
   // 1つ目の場面から順に動かしながら録画
   board=clone(scenes[0].board);activeId=scenes[0].id;label=scenes[0].name;sIdx=0;render();renderScenes();
   await draw();
+  if(aud&&aud.el){
+    try{aud.el.pause();aud.el.muted=false;aud.el.currentTime=aud.start||0;await new Promise(r=>{let ok=false;const f=()=>{if(!ok){ok=true;r()}};aud.el.addEventListener('seeked',f,{once:true});setTimeout(f,1500)})}catch(e){}
+  }
   mr.start(250);loop();
+  if(aud&&aud.el)aud.el.play().catch(()=>toast('音を再生できませんでした。音なしで作ります',4000));
   const [mv,hold]=SPEED[set.speed];let i=0;
   const step=()=>{
     if(!rec)return;
@@ -1286,7 +1308,23 @@ $('recBtn').onclick=()=>{
 };
 $('nameCancel').onclick=()=>$('nameDlg').hidden=true;
 $('nameDlg').addEventListener('click',e=>{if(e.target.id==='nameDlg')$('nameDlg').hidden=true});
-$('nameForm').addEventListener('submit',e=>{e.preventDefault();const n=$('vidName').value;$('nameDlg').hidden=true;recordVideo(n)});
+let audFileSel=null;
+function updAud(){$('audName').textContent=audFileSel?audFileSel.name:'音なし';$('audClear').hidden=!audFileSel;$('audStartRow').hidden=!audFileSel}
+$('audFile').onchange=e=>{audFileSel=e.target.files[0]||null;e.target.value='';updAud()};
+$('audClear').onclick=()=>{audFileSel=null;updAud()};
+$('nameForm').addEventListener('submit',e=>{
+  e.preventDefault();const n=$('vidName').value;$('nameDlg').hidden=true;
+  let aud=null;
+  if(audFileSel){
+    // iPadでは、押した瞬間に音の再生を始めておかないと後で鳴らせないため、ここで準備する
+    const AC=window.AudioContext||window.webkitAudioContext,actx=new AC();actx.resume();
+    const el=document.createElement(audFileSel.type.startsWith('audio')?'audio':'video');
+    el.src=URL.createObjectURL(audFileSel);el.playsInline=true;el.setAttribute('playsinline','');el.preload='auto';
+    el.muted=true;el.play().catch(()=>{});
+    aud={el,actx,start:Math.max(0,+$('audStart').value||0)};
+  }
+  recordVideo(n,aud);
+});
 $('recStop').onclick=()=>{if(rec)rec.finish(true)};
 $('speed').value=set.speed;$('speed').onchange=e=>{set.speed=e.target.value;persist()};
 
