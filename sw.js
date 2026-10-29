@@ -1,18 +1,20 @@
 // N1 プレー分析ボード service worker
 // アプリを更新したら VERSION の数字を上げる
-const VERSION = 'n1-analysis-v8';
+const VERSION = 'n1-analysis-v9';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('n1-analysis-') && k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || req.url.startsWith('blob:')) return;
   const url = new URL(req.url);
+  // フォーメーションボード（board/）は別アプリなので触らない
+  if (url.origin === location.origin && url.pathname.includes('/board/')) return;
   // ページ本体はネット優先（更新がすぐ届く）、オフラインならキャッシュ
   if (req.mode === 'navigate' || (url.origin === location.origin && url.pathname.endsWith('.html'))){
     e.respondWith(fetch(req).then(res => { const copy = res.clone(); caches.open(VERSION).then(c => c.put('./index.html', copy)); return res; })
