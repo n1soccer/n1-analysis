@@ -1259,10 +1259,10 @@ async function recordVideo(vidName,aud){
     dst.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
   }catch(e){actx=null}
   let mr;
-  try{mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8e6,audioBitsPerSecond:64e3})}
+  try{mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:16e6,audioBitsPerSecond:64e3})}
   catch(e){ // 音声付きで作れないブラウザは映像だけで
     stream.getAudioTracks().forEach(t=>{stream.removeTrack(t);t.stop()});
-    try{mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8e6})}catch(e2){toast('動画を作れませんでした');return}
+    try{mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:16e6})}catch(e2){toast('動画を作れませんでした');return}
   }
   mr.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
   rec={mr,stop:false,raf:0,timer:0};

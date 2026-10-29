@@ -1537,7 +1537,7 @@ async function startExport(){
     }
   }
   let rec;
-  try { rec = new MediaRecorder(stream, { mimeType:mm.mime, videoBitsPerSecond:8000000 }); }
+  try { rec = new MediaRecorder(stream, { mimeType:mm.mime, videoBitsPerSecond:16000000 }); }
   catch(e){ try { rec = new MediaRecorder(stream); } catch(e2){ toast('このブラウザでは書き出せませんでした'); return; } }
   const chunks = [];
   rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
