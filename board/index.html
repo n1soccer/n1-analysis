@@ -1180,7 +1180,8 @@ $('playScenes').onclick=playScenes;
 let toastT=0;
 function toast(t,ms){const e=$('toast');e.textContent=t;e.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>e.hidden=true,ms||3000)}
 function pickMime(){
-  const c=['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+  // 音声トラック（無音）も入れられる形式を先に選ぶ
+  const c=['video/mp4;codecs=avc1,mp4a.40.2','video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1,opus','video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9,opus','video/webm'];
   return c.find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m))||'';
 }
 // ボードのSVGを、色や線の見た目ごと1枚の画像にできる形にする
@@ -1232,7 +1233,20 @@ async function recordVideo(vidName){
     busy=false;
   }
   const stream=cv.captureStream(30),chunks=[];
-  let mr;try{mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8e6})}catch(e){toast('動画を作れませんでした');return}
+  // 編集アプリやSNSで読み込めるように、無音の音声トラックを付ける
+  let actx=null;
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;actx=new AC();await actx.resume();
+    const osc=actx.createOscillator(),g=actx.createGain(),dst=actx.createMediaStreamDestination();
+    g.gain.value=0;osc.connect(g).connect(dst);osc.start();
+    dst.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+  }catch(e){actx=null}
+  let mr;
+  try{mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8e6,audioBitsPerSecond:64e3})}
+  catch(e){ // 音声付きで作れないブラウザは映像だけで
+    stream.getAudioTracks().forEach(t=>{stream.removeTrack(t);t.stop()});
+    try{mr=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8e6})}catch(e2){toast('動画を作れませんでした');return}
+  }
   mr.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
   rec={mr,stop:false,raf:0,timer:0};
   $('recOv').hidden=false;$('recMsg').textContent='動画を作っています…（画面はそのままにしてください）';
@@ -1240,7 +1254,7 @@ async function recordVideo(vidName){
   const finish=async cancel=>{
     if(!rec)return;const r=rec;rec=null;cancelAnimationFrame(r.raf);clearTimeout(r.timer);cancelAnim();
     await new Promise(res=>{r.mr.onstop=res;try{r.mr.stop()}catch(e){res()}});
-    stream.getTracks().forEach(t=>t.stop());
+    stream.getTracks().forEach(t=>t.stop());if(actx)try{actx.close()}catch(e){}
     set.orient=prevOrient;applyOrient();render();persist();
     $('recOv').hidden=true;renderScenes();
     if(cancel){toast('動画づくりを中止しました');return}
