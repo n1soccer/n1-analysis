@@ -1145,45 +1145,22 @@ async function recordVideo(){
   const cv=document.createElement('canvas');
   if(!mime||!cv.captureStream){toast('このブラウザでは動画を作れません。SafariかChromeの新しい版で開いてください',5000);return}
   stopScenes();cancelAnim();select(null);selArrow=null;selZone=null;multi=[];linkStart=null;
-  // 1920×1080 の横長動画。縦ピッチは左にボード・右に文字、横ピッチは上に文字・下にボード
-  const vb=svg.viewBox.baseVal,CW=1920,CH=1080,M=48,vert=vb.height>vb.width;
-  cv.width=CW;cv.height=CH;const ctx=cv.getContext('2d');
-  let bx,by,bw,bh,tx,ty,tw;
-  if(vert){bh=CH-M*2;bw=Math.round(bh*vb.width/vb.height);bx=M+40;by=M;tx=bx+bw+80;ty=M+40;tw=CW-tx-M-20}
-  else{bh=CH-150-M;bw=Math.round(bh*vb.width/vb.height);if(bw>CW-M*2){bw=CW-M*2;bh=Math.round(bw*vb.height/vb.width)}bx=Math.round((CW-bw)/2);by=CH-M-bh;tx=bx;ty=M;tw=bw}
-  const style=svgStyleText(),bs=getComputedStyle(document.body),bg=bs.backgroundColor,ink=bs.color;
-  const cs=getComputedStyle(document.documentElement),accent=cs.getPropertyValue('--accent').trim()||'#1d6b4c',muted=cs.getPropertyValue('--muted').trim()||'#5d6a62';
-  const p=curP(),title0=(title||'').trim(),memo=(p&&p.memo||'').trim();
-  const F='"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",system-ui,sans-serif';
+  // 1920×1080 の横長動画。文字は入れず、横向きのピッチを画面いっぱいに
+  const prevOrient=set.orient;set.orient='h';applyOrient();render();
+  const CW=1920,CH=1080;cv.width=CW;cv.height=CH;const ctx=cv.getContext('2d');
+  const style=svgStyleText(),pitchBg=getComputedStyle(document.documentElement).getPropertyValue('--pitch-2').trim()||'#367d4f';
   let label='',sIdx=0;
-  // 日本語は1文字ずつ測って折り返す
-  function wrap(t,w,max){const out=[];for(const para of t.split('\n')){let line='';for(const ch of para){if(ctx.measureText(line+ch).width>w&&line){out.push(line);line=ch}else line+=ch}out.push(line)}
-    if(out.length>max){out.length=max;out[max-1]=out[max-1].replace(/.$/,'…')}return out}
   const img=new Image();let busy=false;
   async function draw(){
     if(busy)return;busy=true;
     try{
-      const c=svg.cloneNode(true);c.setAttribute('width',bw);c.setAttribute('height',bh);c.setAttribute('xmlns','http://www.w3.org/2000/svg');
+      const c=svg.cloneNode(true);c.setAttribute('width',CW);c.setAttribute('height',CH);c.setAttribute('xmlns','http://www.w3.org/2000/svg');
+      c.setAttribute('viewBox','-11.5 -2 128 72'); // 16:9 にピッチ全体（タッチラインまで）を収める
+      c.querySelectorAll('.zlbl').forEach(e=>e.remove()); // 文字は入れない
       const st=document.createElementNS('http://www.w3.org/2000/svg','style');st.textContent=style;c.insertBefore(st,c.firstChild);
       img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(c));await img.decode();
-      ctx.fillStyle=bg;ctx.fillRect(0,0,CW,CH);
-      ctx.drawImage(img,bx,by,bw,bh);
-      ctx.textBaseline='top';
-      if(vert){
-        let y=ty;
-        if(title0){ctx.fillStyle=muted;ctx.font=`500 30px ${F}`;for(const l of wrap(title0,tw,2)){ctx.fillText(l,tx,y);y+=42}y+=10}
-        ctx.fillStyle=ink;ctx.font=`700 64px ${F}`;for(const l of wrap(p?p.name:'',tw,2)){ctx.fillText(l,tx,y);y+=80}
-        y+=24;ctx.fillStyle=accent;ctx.fillRect(tx,y,6,52);
-        ctx.fillStyle=ink;ctx.font=`700 42px ${F}`;ctx.fillText(label,tx+24,y+4);
-        ctx.fillStyle=muted;ctx.font=`500 26px ${F}`;ctx.fillText(`${sIdx+1} / ${scenes.length}`,tx+24,y+56);
-        y+=130;
-        if(memo){ctx.fillStyle=ink;ctx.font=`500 32px ${F}`;for(const l of wrap(memo,tw,Math.floor((CH-M-y)/48))){ctx.fillText(l,tx,y);y+=48}}
-      }else{
-        ctx.fillStyle=ink;ctx.font=`700 52px ${F}`;ctx.fillText(p?p.name:'',tx,ty);
-        const nw=ctx.measureText(p?p.name:'').width;
-        ctx.fillStyle=accent;ctx.font=`700 36px ${F}`;ctx.fillText(label,tx+nw+40,ty+12);
-        ctx.fillStyle=muted;ctx.font=`500 26px ${F}`;ctx.textAlign='right';ctx.fillText([title0,`${sIdx+1} / ${scenes.length}`].filter(Boolean).join('　'),tx+tw,ty+20);ctx.textAlign='left';
-      }
+      ctx.fillStyle=pitchBg;ctx.fillRect(0,0,CW,CH);
+      ctx.drawImage(img,0,0,CW,CH);
     }catch(e){}
     busy=false;
   }
@@ -1197,6 +1174,7 @@ async function recordVideo(){
     if(!rec)return;const r=rec;rec=null;cancelAnimationFrame(r.raf);clearTimeout(r.timer);cancelAnim();
     await new Promise(res=>{r.mr.onstop=res;try{r.mr.stop()}catch(e){res()}});
     stream.getTracks().forEach(t=>t.stop());
+    set.orient=prevOrient;applyOrient();render();persist();
     $('recOv').hidden=true;renderScenes();
     if(cancel){toast('動画づくりを中止しました');return}
     const type=mime.split(';')[0],ext=type==='video/mp4'?'mp4':'webm';
