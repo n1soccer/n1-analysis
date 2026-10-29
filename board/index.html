@@ -396,6 +396,17 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
   </main>
 </div>
 
+<div class="data" id="nameDlg" hidden>
+  <form class="box" id="nameForm" style="width:min(440px,100%)">
+    <h2 style="font-size:15px">動画の名前</h2>
+    <input class="txt" id="vidName" maxlength="40" aria-label="動画の名前" style="font-size:16px;padding:9px 10px">
+    <p>この名前で保存されます。場面1から順に再生しながら動画を作ります。</p>
+    <div class="row" style="justify-content:flex-end">
+      <button type="button" class="btn" id="nameCancel">やめる</button>
+      <button type="submit" class="btn primary">動画を作る</button>
+    </div>
+  </form>
+</div>
 <div class="recov" id="recOv" hidden><div class="card"><i class="recdot"></i><span id="recMsg">動画を作っています…</span><button class="btn sm" id="recStop">中止</button></div></div>
 <div class="toast" id="toast" hidden></div>
 <div class="data" id="dataPanel" hidden>
@@ -1138,7 +1149,7 @@ async function saveFile(name,blob){
   }catch(e){toast('保存できませんでした');return false}
 }
 let rec=null;
-async function recordVideo(){
+async function recordVideo(vidName){
   if(rec)return;
   if(scenes.length<2){toast('場面を2つ以上作ると動画にできます');return}
   const mime=pickMime();
@@ -1162,10 +1173,8 @@ async function recordVideo(){
       c.querySelectorAll('.zlbl').forEach(e=>e.remove()); // 文字は入れない
       const st=document.createElementNS('http://www.w3.org/2000/svg','style');st.textContent=style;c.insertBefore(st,c.firstChild);
       img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(c));await img.decode();
-      ctx.fillStyle=pageBg;ctx.fillRect(0,0,CW,CH);
-      ctx.fillStyle=pitchBg;ctx.beginPath();ctx.roundRect?ctx.roundRect(bx,by,bw,bh,14):ctx.rect(bx,by,bw,bh);ctx.fill();
-      ctx.save();ctx.beginPath();ctx.roundRect?ctx.roundRect(bx,by,bw,bh,14):ctx.rect(bx,by,bw,bh);ctx.clip();
-      ctx.drawImage(img,bx,by,bw,bh);ctx.restore();
+      ctx.fillStyle=pitchBg;ctx.fillRect(0,0,CW,CH); // 左右の余白もピッチの外と同じ色
+      ctx.drawImage(img,bx,by,bw,bh);
     }catch(e){}
     busy=false;
   }
@@ -1185,7 +1194,8 @@ async function recordVideo(){
     const type=mime.split(';')[0],ext=type==='video/mp4'?'mp4':'webm';
     const blob=new Blob(chunks,{type});
     const d=new Date(),pad=n=>String(n).padStart(2,'0');
-    await saveFile(`n1-board-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.${ext}`,blob);
+    const safe=(vidName||'').replace(/[\\/:*?"<>|\n\r\t]/g,'').trim();
+    await saveFile(`${safe||`n1-board-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`}.${ext}`,blob);
   };
   rec.finish=finish;
   // 1つ目の場面から順に動かしながら録画
@@ -1201,7 +1211,15 @@ async function recordVideo(){
   };
   rec.timer=setTimeout(step,hold);
 }
-$('recBtn').onclick=recordVideo;
+$('recBtn').onclick=()=>{
+  if(scenes.length<2){toast('場面を2つ以上作ると動画にできます');return}
+  const p=curP(),d=new Date();
+  $('vidName').value=[ (title||'').trim(), p?p.name:'' ].filter(Boolean).join('_')||`N1ボード_${d.getMonth()+1}月${d.getDate()}日`;
+  $('nameDlg').hidden=false;setTimeout(()=>{$('vidName').focus();$('vidName').select()},50);
+};
+$('nameCancel').onclick=()=>$('nameDlg').hidden=true;
+$('nameDlg').addEventListener('click',e=>{if(e.target.id==='nameDlg')$('nameDlg').hidden=true});
+$('nameForm').addEventListener('submit',e=>{e.preventDefault();const n=$('vidName').value;$('nameDlg').hidden=true;recordVideo(n)});
 $('recStop').onclick=()=>{if(rec)rec.finish(true)};
 $('speed').value=set.speed;$('speed').onchange=e=>{set.speed=e.target.value;persist()};
 
