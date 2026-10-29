@@ -1145,22 +1145,27 @@ async function recordVideo(){
   const cv=document.createElement('canvas');
   if(!mime||!cv.captureStream){toast('このブラウザでは動画を作れません。SafariかChromeの新しい版で開いてください',5000);return}
   stopScenes();cancelAnim();select(null);selArrow=null;selZone=null;multi=[];linkStart=null;
-  // 1920×1080 の横長動画。文字は入れず、横向きのピッチを画面いっぱいに
-  const prevOrient=set.orient;set.orient='h';applyOrient();render();
-  const CW=1920,CH=1080;cv.width=CW;cv.height=CH;const ctx=cv.getContext('2d');
-  const style=svgStyleText(),pitchBg=getComputedStyle(document.documentElement).getPropertyValue('--pitch-2').trim()||'#367d4f';
+  // 1920×1080。縦向きのピッチを真ん中に大きく置き、左右は文字を後から入れるための余白にする
+  const prevOrient=set.orient;set.orient='v';applyOrient();render();
+  const CW=1920,CH=1080,VB=[-3,-3,74,111],M=24;
+  const bh=CH-M*2,bw=Math.round(bh*VB[2]/VB[3]),bx=Math.round((CW-bw)/2),by=M;
+  cv.width=CW;cv.height=CH;const ctx=cv.getContext('2d');
+  const rs=getComputedStyle(document.documentElement);
+  const style=svgStyleText(),pitchBg=rs.getPropertyValue('--pitch-2').trim()||'#367d4f',pageBg=getComputedStyle(document.body).backgroundColor;
   let label='',sIdx=0;
   const img=new Image();let busy=false;
   async function draw(){
     if(busy)return;busy=true;
     try{
-      const c=svg.cloneNode(true);c.setAttribute('width',CW);c.setAttribute('height',CH);c.setAttribute('xmlns','http://www.w3.org/2000/svg');
-      c.setAttribute('viewBox','-11.5 -2 128 72'); // 16:9 にピッチ全体（タッチラインまで）を収める
+      const c=svg.cloneNode(true);c.setAttribute('width',bw);c.setAttribute('height',bh);c.setAttribute('xmlns','http://www.w3.org/2000/svg');
+      c.setAttribute('viewBox',VB.join(' '));
       c.querySelectorAll('.zlbl').forEach(e=>e.remove()); // 文字は入れない
       const st=document.createElementNS('http://www.w3.org/2000/svg','style');st.textContent=style;c.insertBefore(st,c.firstChild);
       img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(c));await img.decode();
-      ctx.fillStyle=pitchBg;ctx.fillRect(0,0,CW,CH);
-      ctx.drawImage(img,0,0,CW,CH);
+      ctx.fillStyle=pageBg;ctx.fillRect(0,0,CW,CH);
+      ctx.fillStyle=pitchBg;ctx.beginPath();ctx.roundRect?ctx.roundRect(bx,by,bw,bh,14):ctx.rect(bx,by,bw,bh);ctx.fill();
+      ctx.save();ctx.beginPath();ctx.roundRect?ctx.roundRect(bx,by,bw,bh,14):ctx.rect(bx,by,bw,bh);ctx.clip();
+      ctx.drawImage(img,bx,by,bw,bh);ctx.restore();
     }catch(e){}
     busy=false;
   }
