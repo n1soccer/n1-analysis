@@ -303,7 +303,7 @@ table.m td small{font-size:11px;color:var(--muted);margin-left:1px}
         <label class="chk" id="rotWrap" for="pRot">向き</label>
         <input id="pRot" type="range" min="-180" max="180" step="15" aria-label="向き">
         <button class="btn sm" id="rotReset">正面</button>
-        <button class="btn sm primary" id="hlBtn">★ 強調</button>
+        <button class="btn sm primary" id="hlBtn">強調</button>
         <button class="btn sm" id="lockOne">この選手をロック</button>
         <button class="btn sm" id="straight" hidden>まっすぐに戻す</button>
         <button class="btn sm danger" id="delArrow" hidden>削除</button>
@@ -676,7 +676,6 @@ function render(){
         <text class="${cls}" x="${tx}" y="${ty}" style="fill:${tc}"${up(tx,ty)}>${esc(info.n)}</text></g>
         ${info.note?`<circle class="badge" cx="${r1(bx*PS)}" cy="${r1(by*PS)}" r=".5"/>`:''}
         ${lockI?`<g transform="translate(${lx} ${ly}) scale(.09)"><path class="lockmark" d="M4 7V5a4 4 0 0 1 8 0v2" fill="none" style="stroke:var(--ink);stroke-width:2.4"/><rect class="lockmark" x="2" y="7" width="12" height="9" rx="1.5"/></g>`:''}
-        ${hl?`<path class="hlstar" transform="translate(${set.orient==='h'?-2.6:2.6} ${set.orient==='h'?2.6:-2.6}) scale(.11)" d="${STAR}"/>`:''}
         ${info.name?`<text class="nm" x="${nx}" y="${ny}"${up(nx,ny)}>${esc(info.name)}</text>`:''}</g>`;
     });
   };
@@ -956,7 +955,7 @@ function updSelbar(){
     $('pRot').value=Math.round(p.r||0);
   }
   const hb=$('hlBtn'),tg=hlTargets();hb.hidden=!tg.length;
-  if(tg.length){const all=tg.every(m=>isHl(m.k,m.i));hb.textContent=all?'強調を外す':'★ 強調';hb.classList.toggle('primary',!all)}
+  if(tg.length){const all=tg.every(m=>isHl(m.k,m.i));hb.textContent=all?'強調を外す':'強調';hb.classList.toggle('primary',!all)}
   const lb=$('lockOne');lb.hidden=!sel||many;
   if(sel){const tl=set.lock[sel.k],on=set.lockP.includes(sel.k+':'+sel.i);
     lb.disabled=tl;lb.textContent=tl?'チームごとロック中':on?'ロック解除':'この選手をロック';}
@@ -969,7 +968,7 @@ $('hlBtn').onclick=()=>{
   board.hl=all?(board.hl||[]).filter(x=>!keys.includes(x)):[...new Set([...(board.hl||[]),...keys])];
   updSelbar();render();persist();updHlClear();
 };
-function updHlClear(){const n=(board.hl||[]).length;$('hlClear').hidden=!n;if(n)$('hlClear').textContent=`★ 強調を全解除（${n}人）`}
+function updHlClear(){const n=(board.hl||[]).length;$('hlClear').hidden=!n;if(n)$('hlClear').textContent=`強調を全解除（${n}人）`}
 $('lockOne').onclick=()=>{if(!sel)return;const key=sel.k+':'+sel.i;
   set.lockP=set.lockP.includes(key)?set.lockP.filter(x=>x!==key):[...set.lockP,key];updSelbar();render();persist()};
 function renderLocks(){document.querySelectorAll('[data-lock]').forEach(b=>{const on=!!set.lock[b.dataset.lock];b.setAttribute('aria-pressed',on);b.title=on?'タップでロック解除':'タップでロック'})}
