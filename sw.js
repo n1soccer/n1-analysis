@@ -1,24 +1,24 @@
 // N1 プレー分析ボード service worker
-// アプリを更新したら VERSION の数字を上げる
-const VERSION = 'n1-analysis-v11';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
+// アプリを更新したら VERSION の数字を上げる（index.html の ?v= も合わせて上げる）
+const VERSION = 'n1-analysis-v20';
+const SHELL = ['./', './index.html', './css/app.css?v=20', './js/app.js?v=20', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('n1-analysis-') && k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || req.url.startsWith('blob:')) return;
   const url = new URL(req.url);
-  // フォーメーションボード（board/）は別アプリなので触らない
   if (url.origin === location.origin && url.pathname.includes('/board/')) return;
-  // ページ本体はネット優先（更新がすぐ届く）、オフラインならキャッシュ
-  if (req.mode === 'navigate' || (url.origin === location.origin && url.pathname.endsWith('.html'))){
-    e.respondWith(fetch(req).then(res => { const copy = res.clone(); caches.open(VERSION).then(c => c.put('./index.html', copy)); return res; })
-      .catch(() => caches.match('./index.html')));
+  // ページ本体・アプリのコードはネット優先（更新がすぐ届く）、オフラインならキャッシュ
+  const own = url.origin === location.origin && /\.(html|js|css)$|\/$/.test(url.pathname);
+  if (req.mode === 'navigate' || own){
+    e.respondWith(fetch(req).then(res => { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); return res; })
+      .catch(() => caches.match(req, { ignoreSearch:false }).then(h => h || caches.match('./index.html'))));
     return;
   }
   // それ以外（アイコン・フォント）はキャッシュ優先
